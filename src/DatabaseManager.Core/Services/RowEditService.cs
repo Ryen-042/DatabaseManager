@@ -13,6 +13,7 @@ public sealed class RowEditService : IRowEditService
         string tableName,
         int topRows,
         string? filterExpression,
+        string? orderByExpression,
         int commandTimeoutSeconds,
         CancellationToken cancellationToken)
     {
@@ -20,6 +21,11 @@ public sealed class RowEditService : IRowEditService
         if (!string.IsNullOrWhiteSpace(filterExpression))
         {
             sql += $" WHERE {filterExpression}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(orderByExpression))
+        {
+            sql += $" ORDER BY {orderByExpression}";
         }
 
         await using var connection = new SqlConnection(connectionString);

@@ -2,6 +2,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -42,6 +43,10 @@ public partial class MainWindow : Window
     private readonly GridLength _schemaPaneExpandedWidth = new(330);
     private DataTable? _editableResultsTable;
     private bool _isEditMode;
+    private bool _isSyncingEditQuery;
+    private static readonly Regex EditRowsQueryRegex = new(
+        @"^\s*SELECT\s+TOP\s*\(\s*(?<top>\d+)\s*\)\s+\*\s+FROM\s+(?<from>\[[^\]]+\]\.\[[^\]]+\]|\S+)(?:\s+WHERE\s+(?<where>.*?))?(?:\s+ORDER\s+BY\s+(?<order>.*?))?\s*;?\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     public MainWindow()
     {
@@ -67,6 +72,7 @@ public partial class MainWindow : Window
         OutputTabControl.SelectedIndex = 1;
         UpdateSchemaDetailsPanelByAssistantTab();
         ApplyEditModeState();
+        UpdateEditQueryTextFromInputs();
         SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
     }
 
@@ -393,6 +399,11 @@ public partial class MainWindow : Window
 
     private void ResultsDataGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (sender is not DataGrid dataGrid)
+        {
+            return;
+        }
+
         var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
         if (row is null)
         {
@@ -400,7 +411,7 @@ public partial class MainWindow : Window
         }
 
         row.IsSelected = true;
-        ResultsDataGrid.SelectedItem = row.Item;
+        dataGrid.SelectedItem = row.Item;
     }
 
     private async void DeleteRowMenuItem_Click(object sender, RoutedEventArgs e)
@@ -427,7 +438,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (ResultsDataGrid.SelectedItem is not DataRowView selectedRowView)
+        if (EditRowsDataGrid.SelectedItem is not DataRowView selectedRowView)
         {
             SetStatus("Select a row to delete.");
             return;
@@ -534,6 +545,7 @@ public partial class MainWindow : Window
             TableSqlDefinitionTextBox.Text = string.Empty;
             SelectedTableTextBlock.Text = "Select a table to inspect columns.";
             SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
+            UpdateEditQueryTextFromInputs();
             return;
         }
 
@@ -551,6 +563,7 @@ public partial class MainWindow : Window
             SelectedTableTextBlock.Text = $"{_selectedTable.FullName} ({_selectedColumns.Count} columns)";
             SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
             UpdateSchemaDetailsPanelByAssistantTab();
+            UpdateEditQueryTextFromInputs();
             OutputTabControl.SelectedIndex = 0;
         }
         catch (Exception ex)
@@ -714,7 +727,7 @@ public partial class MainWindow : Window
         }
 
         RunnerProcedureTextBlock.Text = $"Ready to execute {_selectedStoredProcedure!.FullName}";
-        OutputTabControl.SelectedIndex = 2;
+        OutputTabControl.SelectedIndex = 3;
         SetStatus("Loaded procedure parameters into runner.");
     }
 
@@ -1113,14 +1126,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!int.TryParse(EditTopRowsTextBox.Text.Trim(), out var topRows) || topRows <= 0)
-        {
-            EditTopRowsTextBox.Text = "200";
-            topRows = 200;
-        }
+        SyncInputsFromEditQueryText();
 
-        topRows = Math.Min(topRows, 5000);
+        var topRows = ParseEditTopRowsInput();
         var filter = string.IsNullOrWhiteSpace(EditFilterTextBox.Text) ? null : EditFilterTextBox.Text.Trim();
+        var orderBy = string.IsNullOrWhiteSpace(EditOrderByTextBox.Text) ? null : EditOrderByTextBox.Text.Trim();
+
+        UpdateEditQueryTextFromInputs();
+
+        if (topRows > 5000)
+        {
+            topRows = 5000;
+            _isSyncingEditQuery = true;
+            EditTopRowsTextBox.Text = "5000";
+            _isSyncingEditQuery = false;
+            UpdateEditQueryTextFromInputs();
+        }
 
         SetExecutionState(true);
         SetStatus($"Loading editable rows from {_selectedTable.FullName}...");
@@ -1133,19 +1154,18 @@ public partial class MainWindow : Window
                 _selectedTable.TableName,
                 topRows,
                 filter,
+                orderBy,
                 ParseTimeoutSeconds(),
                 CancellationToken.None);
 
             _isEditMode = true;
             _currentDataTable = _editableResultsTable;
-            ResultsDataGrid.ItemsSource = _editableResultsTable.DefaultView;
-            ResultsSummaryTextBlock.Text = $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
-            OutputTabControl.SelectedIndex = 1;
+            EditRowsDataGrid.ItemsSource = _editableResultsTable.DefaultView;
+            EditRowsSummaryTextBlock.Text = $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
+            OutputTabControl.SelectedIndex = 2;
             ApplyEditModeState();
 
-            SetStatus(filter is null
-                ? $"Edit mode ready for {_selectedTable.FullName}."
-                : $"Edit mode ready for {_selectedTable.FullName} with filter applied.");
+            SetStatus($"Edit mode ready for {_selectedTable.FullName}.");
         }
         catch (Exception ex)
         {
@@ -1159,14 +1179,165 @@ public partial class MainWindow : Window
 
     private void ApplyEditModeState()
     {
-        ResultsDataGrid.IsReadOnly = !_isEditMode;
-        ResultsDataGrid.CanUserAddRows = false;
-        ResultsDataGrid.CanUserDeleteRows = false;
+        EditRowsDataGrid.IsReadOnly = !_isEditMode;
+        EditRowsDataGrid.CanUserAddRows = false;
+        EditRowsDataGrid.CanUserDeleteRows = false;
 
         EnterEditModeButton.Content = _isEditMode ? "Reload Edit Rows" : "Edit Top Rows";
         SaveRowChangesButton.IsEnabled = _isEditMode;
         DiscardRowChangesButton.IsEnabled = _isEditMode;
         DeleteRowMenuItem.IsEnabled = _isEditMode;
+        EditRowsSummaryTextBlock.Text = _isEditMode
+            ? EditRowsSummaryTextBlock.Text
+            : "Edit mode is not active.";
+    }
+
+    private void EditRowsInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isSyncingEditQuery)
+        {
+            return;
+        }
+
+        UpdateEditQueryTextFromInputs();
+    }
+
+    private void EditQueryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isSyncingEditQuery)
+        {
+            return;
+        }
+
+        SyncInputsFromEditQueryText();
+    }
+
+    private void UpdateEditQueryTextFromInputs()
+    {
+        if (_isSyncingEditQuery)
+        {
+            return;
+        }
+
+        if (EditTopRowsTextBox is null || EditFilterTextBox is null || EditOrderByTextBox is null || EditQueryTextBox is null)
+        {
+            return;
+        }
+
+        var topRows = ParseEditTopRowsInput();
+        var filter = string.IsNullOrWhiteSpace(EditFilterTextBox.Text) ? null : EditFilterTextBox.Text.Trim();
+        var orderBy = string.IsNullOrWhiteSpace(EditOrderByTextBox.Text) ? null : EditOrderByTextBox.Text.Trim();
+
+        var generatedSql = BuildEditRowsQuery(topRows, filter, orderBy);
+
+        _isSyncingEditQuery = true;
+        EditQueryTextBox.Text = generatedSql;
+        EditQueryTextBox.CaretIndex = EditQueryTextBox.Text.Length;
+        _isSyncingEditQuery = false;
+    }
+
+    private void SyncInputsFromEditQueryText()
+    {
+        if (_isSyncingEditQuery)
+        {
+            return;
+        }
+
+        if (EditTopRowsTextBox is null || EditFilterTextBox is null || EditOrderByTextBox is null || EditQueryTextBox is null)
+        {
+            return;
+        }
+
+        var sql = EditQueryTextBox.Text;
+        if (!TryParseEditRowsQuery(sql, out var topRows, out var filter, out var orderBy))
+        {
+            return;
+        }
+
+        _isSyncingEditQuery = true;
+        EditTopRowsTextBox.Text = topRows.ToString();
+        EditFilterTextBox.Text = filter ?? string.Empty;
+        EditOrderByTextBox.Text = orderBy ?? string.Empty;
+        _isSyncingEditQuery = false;
+    }
+
+    private int ParseEditTopRowsInput()
+    {
+        if (EditTopRowsTextBox is null)
+        {
+            return 200;
+        }
+
+        if (int.TryParse(EditTopRowsTextBox.Text.Trim(), out var topRows) && topRows > 0)
+        {
+            return topRows;
+        }
+
+        _isSyncingEditQuery = true;
+        EditTopRowsTextBox.Text = "200";
+        _isSyncingEditQuery = false;
+        return 200;
+    }
+
+    private string BuildEditRowsQuery(int topRows, string? filter, string? orderBy)
+    {
+        if (_selectedTable is null)
+        {
+            return "-- Select a table to generate an editable-row query.";
+        }
+
+        var sql = $"SELECT TOP ({topRows}) *{Environment.NewLine}FROM [{_selectedTable.SchemaName}].[{_selectedTable.TableName}]";
+
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            sql += $"{Environment.NewLine}WHERE {filter}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(orderBy))
+        {
+            sql += $"{Environment.NewLine}ORDER BY {orderBy}";
+        }
+
+        sql += ";";
+        return sql;
+    }
+
+    private static bool TryParseEditRowsQuery(string sql, out int topRows, out string? filter, out string? orderBy)
+    {
+        topRows = 200;
+        filter = null;
+        orderBy = null;
+
+        var match = EditRowsQueryRegex.Match(sql ?? string.Empty);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(match.Groups["top"].Value, out topRows) || topRows <= 0)
+        {
+            return false;
+        }
+
+        filter = match.Groups["where"].Success
+            ? match.Groups["where"].Value.Trim()
+            : null;
+
+        orderBy = match.Groups["order"].Success
+            ? match.Groups["order"].Value.Trim().TrimEnd(';')
+            : null;
+
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            filter = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(orderBy))
+        {
+            orderBy = null;
+        }
+
+        return true;
     }
 
     private static IReadOnlyList<RowUpdateRequest> BuildRowUpdates(DataTable table, IReadOnlyList<ColumnSchemaInfo> columns)

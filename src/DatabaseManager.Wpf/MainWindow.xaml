@@ -313,7 +313,6 @@
                             <Grid Margin="8">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
@@ -334,8 +333,29 @@
                                             MinWidth="95"
                                             Click="ExportExcelButton_Click" />
                                 </Grid>
+                                <DataGrid x:Name="ResultsDataGrid"
+                                          Grid.Row="1"
+                                          Margin="0,10,0,0"
+                                          IsReadOnly="True"
+                                          AutoGenerateColumns="True"
+                                          HeadersVisibility="All"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp">
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
 
-                                <WrapPanel Grid.Row="1" Margin="0,10,0,0" VerticalAlignment="Center">
+                        <TabItem Header="Edit Rows">
+                            <Grid Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <WrapPanel Grid.Row="0" VerticalAlignment="Center">
                                     <Button x:Name="EnterEditModeButton"
                                             Content="Edit Top Rows"
                                             Margin="0,0,8,0"
@@ -345,13 +365,22 @@
                                              Width="70"
                                              Margin="0,0,8,0"
                                              VerticalContentAlignment="Center"
-                                             Text="200" />
+                                             Text="200"
+                                             TextChanged="EditRowsInput_TextChanged" />
                                     <TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Text="Filter" />
                                     <TextBox x:Name="EditFilterTextBox"
-                                             Width="280"
+                                             Width="260"
                                              Margin="0,0,8,0"
                                              VerticalContentAlignment="Center"
-                                             ToolTip="Optional SQL filter predicate, e.g. Status = 'Active'" />
+                                             ToolTip="Optional SQL filter predicate, e.g. Age &gt; 30 AND Country = 'USA'"
+                                             TextChanged="EditRowsInput_TextChanged" />
+                                    <TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Text="Order By" />
+                                    <TextBox x:Name="EditOrderByTextBox"
+                                             Width="220"
+                                             Margin="0,0,8,0"
+                                             VerticalContentAlignment="Center"
+                                             ToolTip="Optional ORDER BY expression, e.g. Age DESC, Name ASC"
+                                             TextChanged="EditRowsInput_TextChanged" />
                                     <Button x:Name="ApplyEditFilterButton"
                                             Content="Load"
                                             Margin="0,0,8,0"
@@ -367,8 +396,37 @@
                                             Click="DiscardRowChangesButton_Click" />
                                 </WrapPanel>
 
-                                <DataGrid x:Name="ResultsDataGrid"
-                                          Grid.Row="2"
+                                <Grid Grid.Row="1" Margin="0,10,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0"
+                                               FontWeight="SemiBold"
+                                               Text="Generated Query (editable)" />
+
+                                    <TextBox x:Name="EditQueryTextBox"
+                                             Grid.Row="1"
+                                             Margin="0,6,0,0"
+                                             MinHeight="70"
+                                             AcceptsReturn="True"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Auto"
+                                             TextWrapping="NoWrap"
+                                             FontFamily="Consolas"
+                                             FontSize="12"
+                                             TextChanged="EditQueryTextBox_TextChanged" />
+                                </Grid>
+
+                                <TextBlock x:Name="EditRowsSummaryTextBlock"
+                                           Grid.Row="2"
+                                           Margin="0,10,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="Edit mode is not active." />
+
+                                <DataGrid x:Name="EditRowsDataGrid"
+                                          Grid.Row="3"
                                           Margin="0,10,0,0"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="True"

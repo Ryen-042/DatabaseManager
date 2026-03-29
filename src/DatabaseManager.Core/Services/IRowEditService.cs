@@ -12,6 +12,7 @@ public interface IRowEditService
         string tableName,
         int topRows,
         string? filterExpression,
+        string? orderByExpression,
         int commandTimeoutSeconds,
         CancellationToken cancellationToken);
 
