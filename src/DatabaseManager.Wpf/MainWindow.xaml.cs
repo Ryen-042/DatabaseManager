@@ -8,6 +8,7 @@ using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
+using DatabaseManager.Core.Models.Editing;
 using DatabaseManager.Core.Models;
 using DatabaseManager.Core.Models.Schema;
 using DatabaseManager.Core.Services;
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
 
     private readonly IDatabaseQueryService _databaseQueryService = new SqlServerQueryService();
+    private readonly IRowEditService _rowEditService = new RowEditService();
     private readonly ITemplateStoreService _templateStoreService = new TemplateStoreService();
     private readonly IExportService _exportService = new ExportService();
     private readonly IDatabaseSchemaService _databaseSchemaService = new SqlServerSchemaService();
@@ -38,6 +40,8 @@ public partial class MainWindow : Window
     private StoredProcedureSchemaInfo? _selectedStoredProcedure;
     private readonly ObservableCollection<ProcedureParameterEditorRow> _runnerParameterRows = new();
     private readonly GridLength _schemaPaneExpandedWidth = new(330);
+    private DataTable? _editableResultsTable;
+    private bool _isEditMode;
 
     public MainWindow()
     {
@@ -62,6 +66,7 @@ public partial class MainWindow : Window
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
         OutputTabControl.SelectedIndex = 1;
         UpdateSchemaDetailsPanelByAssistantTab();
+        ApplyEditModeState();
         SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
     }
 
@@ -305,6 +310,175 @@ public partial class MainWindow : Window
 
         await _exportService.ExportToCsvAsync(_currentDataTable!, dialog.FileName, CancellationToken.None);
         SetStatus($"CSV export complete: {dialog.FileName}");
+    }
+
+    private async void EnterEditModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadEditableRowsAsync();
+    }
+
+    private async void ApplyEditFilterButton_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadEditableRowsAsync();
+    }
+
+    private async void SaveRowChangesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isEditMode || _editableResultsTable is null)
+        {
+            return;
+        }
+
+        if (!TryGetConnectionString(out var connectionString))
+        {
+            return;
+        }
+
+        if (_selectedTable is null)
+        {
+            SetStatus("Select a table before saving row edits.");
+            return;
+        }
+
+        if (_selectedColumns.All(c => !c.IsPrimaryKey))
+        {
+            SetStatus("Cannot save edits because the selected table has no primary key.");
+            return;
+        }
+
+        var updates = BuildRowUpdates(_editableResultsTable, _selectedColumns);
+        if (updates.Count == 0)
+        {
+            SetStatus("No row changes detected.");
+            return;
+        }
+
+        SetExecutionState(true);
+        SetStatus($"Saving {updates.Count} row change(s)...");
+
+        try
+        {
+            var affectedRows = await _rowEditService.SaveUpdatedRowsAsync(
+                connectionString,
+                _selectedTable.SchemaName,
+                _selectedTable.TableName,
+                _selectedColumns,
+                updates,
+                ParseTimeoutSeconds(),
+                CancellationToken.None);
+
+            _editableResultsTable.AcceptChanges();
+            SetStatus($"Saved changes successfully ({affectedRows} row(s) affected).");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to save row changes: {ex.Message}");
+        }
+        finally
+        {
+            SetExecutionState(false);
+        }
+    }
+
+    private void DiscardRowChangesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isEditMode || _editableResultsTable is null)
+        {
+            return;
+        }
+
+        _editableResultsTable.RejectChanges();
+        SetStatus("Discarded unsaved row changes.");
+    }
+
+    private void ResultsDataGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+        if (row is null)
+        {
+            return;
+        }
+
+        row.IsSelected = true;
+        ResultsDataGrid.SelectedItem = row.Item;
+    }
+
+    private async void DeleteRowMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isEditMode || _editableResultsTable is null)
+        {
+            return;
+        }
+
+        if (!TryGetConnectionString(out var connectionString))
+        {
+            return;
+        }
+
+        if (_selectedTable is null)
+        {
+            SetStatus("Select a table before deleting rows.");
+            return;
+        }
+
+        if (_selectedColumns.All(c => !c.IsPrimaryKey))
+        {
+            SetStatus("Cannot delete rows because the selected table has no primary key.");
+            return;
+        }
+
+        if (ResultsDataGrid.SelectedItem is not DataRowView selectedRowView)
+        {
+            SetStatus("Select a row to delete.");
+            return;
+        }
+
+        var keyValues = BuildPrimaryKeyValues(selectedRowView.Row, _selectedColumns);
+        var keyDetails = string.Join(", ", keyValues.Select(x => $"{x.Key}={x.Value}"));
+
+        var confirmation = MessageBox.Show(
+            $"Delete this row from {_selectedTable.FullName}?{Environment.NewLine}{Environment.NewLine}{keyDetails}",
+            "Delete Row",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        SetExecutionState(true);
+        SetStatus("Deleting selected row...");
+
+        try
+        {
+            var affectedRows = await _rowEditService.DeleteRowAsync(
+                connectionString,
+                _selectedTable.SchemaName,
+                _selectedTable.TableName,
+                _selectedColumns,
+                keyValues,
+                ParseTimeoutSeconds(),
+                CancellationToken.None);
+
+            if (affectedRows == 0)
+            {
+                SetStatus("No row was deleted. It may have already changed or been removed.");
+                return;
+            }
+
+            _editableResultsTable.Rows.Remove(selectedRowView.Row);
+            _editableResultsTable.AcceptChanges();
+            SetStatus("Row deleted successfully.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to delete row: {ex.Message}");
+        }
+        finally
+        {
+            SetExecutionState(false);
+        }
     }
 
     private async void ExportExcelButton_Click(object sender, RoutedEventArgs e)
@@ -691,6 +865,10 @@ public partial class MainWindow : Window
 
     private void DisplayExecutionResult(string operationName, QueryExecutionResult result)
     {
+        _isEditMode = false;
+        _editableResultsTable = null;
+        ApplyEditModeState();
+
         if (!result.IsSuccess)
         {
             SetStatus($"{operationName} failed after {result.Duration.TotalSeconds:F2}s: {result.ErrorMessage}");
@@ -741,6 +919,9 @@ public partial class MainWindow : Window
         RunQueryButton.IsEnabled = !isExecuting;
         TestConnectionButton.IsEnabled = !isExecuting;
         CancelButton.IsEnabled = isExecuting;
+        SaveRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
+        DiscardRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
+        DeleteRowMenuItem.IsEnabled = _isEditMode && !isExecuting;
     }
 
     private void SetStatus(string message)
@@ -911,6 +1092,154 @@ public partial class MainWindow : Window
         {
             SchemaSummaryTextBlock.Text = "Open Tables or Stored Procedures tab to display schema details.";
         }
+    }
+
+    private async Task LoadEditableRowsAsync()
+    {
+        if (!TryGetConnectionString(out var connectionString))
+        {
+            return;
+        }
+
+        if (_selectedTable is null)
+        {
+            SetStatus("Select a table first to enter edit mode.");
+            return;
+        }
+
+        if (_selectedColumns.Count == 0)
+        {
+            SetStatus("Table metadata is not loaded yet. Select the table again and retry.");
+            return;
+        }
+
+        if (!int.TryParse(EditTopRowsTextBox.Text.Trim(), out var topRows) || topRows <= 0)
+        {
+            EditTopRowsTextBox.Text = "200";
+            topRows = 200;
+        }
+
+        topRows = Math.Min(topRows, 5000);
+        var filter = string.IsNullOrWhiteSpace(EditFilterTextBox.Text) ? null : EditFilterTextBox.Text.Trim();
+
+        SetExecutionState(true);
+        SetStatus($"Loading editable rows from {_selectedTable.FullName}...");
+
+        try
+        {
+            _editableResultsTable = await _rowEditService.LoadTopRowsAsync(
+                connectionString,
+                _selectedTable.SchemaName,
+                _selectedTable.TableName,
+                topRows,
+                filter,
+                ParseTimeoutSeconds(),
+                CancellationToken.None);
+
+            _isEditMode = true;
+            _currentDataTable = _editableResultsTable;
+            ResultsDataGrid.ItemsSource = _editableResultsTable.DefaultView;
+            ResultsSummaryTextBlock.Text = $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
+            OutputTabControl.SelectedIndex = 1;
+            ApplyEditModeState();
+
+            SetStatus(filter is null
+                ? $"Edit mode ready for {_selectedTable.FullName}."
+                : $"Edit mode ready for {_selectedTable.FullName} with filter applied.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to load editable rows: {ex.Message}");
+        }
+        finally
+        {
+            SetExecutionState(false);
+        }
+    }
+
+    private void ApplyEditModeState()
+    {
+        ResultsDataGrid.IsReadOnly = !_isEditMode;
+        ResultsDataGrid.CanUserAddRows = false;
+        ResultsDataGrid.CanUserDeleteRows = false;
+
+        EnterEditModeButton.Content = _isEditMode ? "Reload Edit Rows" : "Edit Top Rows";
+        SaveRowChangesButton.IsEnabled = _isEditMode;
+        DiscardRowChangesButton.IsEnabled = _isEditMode;
+        DeleteRowMenuItem.IsEnabled = _isEditMode;
+    }
+
+    private static IReadOnlyList<RowUpdateRequest> BuildRowUpdates(DataTable table, IReadOnlyList<ColumnSchemaInfo> columns)
+    {
+        var columnNames = columns.Select(c => c.ColumnName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var primaryKeyNames = columns.Where(c => c.IsPrimaryKey).Select(c => c.ColumnName).ToList();
+
+        var updates = new List<RowUpdateRequest>();
+        foreach (DataRow row in table.Rows)
+        {
+            if (row.RowState != DataRowState.Modified)
+            {
+                continue;
+            }
+
+            var keyValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var keyName in primaryKeyNames)
+            {
+                if (!table.Columns.Contains(keyName))
+                {
+                    continue;
+                }
+
+                var value = row[keyName, DataRowVersion.Original];
+                keyValues[keyName] = value == DBNull.Value ? null : value;
+            }
+
+            var currentValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataColumn column in table.Columns)
+            {
+                if (!columnNames.Contains(column.ColumnName))
+                {
+                    continue;
+                }
+
+                var value = row[column, DataRowVersion.Current];
+                currentValues[column.ColumnName] = value == DBNull.Value ? null : value;
+            }
+
+            updates.Add(new RowUpdateRequest
+            {
+                OriginalKeyValues = keyValues,
+                CurrentValues = currentValues
+            });
+        }
+
+        return updates;
+    }
+
+    private static IReadOnlyDictionary<string, object?> BuildPrimaryKeyValues(DataRow row, IReadOnlyList<ColumnSchemaInfo> columns)
+    {
+        var keyValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var keyColumn in columns.Where(c => c.IsPrimaryKey))
+        {
+            if (!row.Table.Columns.Contains(keyColumn.ColumnName))
+            {
+                continue;
+            }
+
+            object? value;
+            if (row.RowState == DataRowState.Modified)
+            {
+                value = row[keyColumn.ColumnName, DataRowVersion.Original];
+            }
+            else
+            {
+                value = row[keyColumn.ColumnName];
+            }
+
+            keyValues[keyColumn.ColumnName] = value == DBNull.Value ? null : value;
+        }
+
+        return keyValues;
     }
 
     private sealed class ProcedureParameterEditorRow

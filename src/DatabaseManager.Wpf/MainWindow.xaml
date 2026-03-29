@@ -313,6 +313,7 @@
                             <Grid Margin="8">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
@@ -334,15 +335,57 @@
                                             Click="ExportExcelButton_Click" />
                                 </Grid>
 
+                                <WrapPanel Grid.Row="1" Margin="0,10,0,0" VerticalAlignment="Center">
+                                    <Button x:Name="EnterEditModeButton"
+                                            Content="Edit Top Rows"
+                                            Margin="0,0,8,0"
+                                            Click="EnterEditModeButton_Click" />
+                                    <TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Text="Top" />
+                                    <TextBox x:Name="EditTopRowsTextBox"
+                                             Width="70"
+                                             Margin="0,0,8,0"
+                                             VerticalContentAlignment="Center"
+                                             Text="200" />
+                                    <TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Text="Filter" />
+                                    <TextBox x:Name="EditFilterTextBox"
+                                             Width="280"
+                                             Margin="0,0,8,0"
+                                             VerticalContentAlignment="Center"
+                                             ToolTip="Optional SQL filter predicate, e.g. Status = 'Active'" />
+                                    <Button x:Name="ApplyEditFilterButton"
+                                            Content="Load"
+                                            Margin="0,0,8,0"
+                                            Click="ApplyEditFilterButton_Click" />
+                                    <Button x:Name="SaveRowChangesButton"
+                                            Content="Save Changes"
+                                            Margin="0,0,8,0"
+                                            IsEnabled="False"
+                                            Click="SaveRowChangesButton_Click" />
+                                    <Button x:Name="DiscardRowChangesButton"
+                                            Content="Discard Changes"
+                                            IsEnabled="False"
+                                            Click="DiscardRowChangesButton_Click" />
+                                </WrapPanel>
+
                                 <DataGrid x:Name="ResultsDataGrid"
-                                          Grid.Row="1"
+                                          Grid.Row="2"
                                           Margin="0,10,0,0"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="True"
                                           HeadersVisibility="All"
                                           CanUserAddRows="False"
                                           CanUserDeleteRows="False"
-                                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
+                                          PreviewMouseRightButtonDown="ResultsDataGrid_PreviewMouseRightButtonDown"
+                                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp">
+                                    <DataGrid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem x:Name="DeleteRowMenuItem"
+                                                      Header="Delete Row..."
+                                                      IsEnabled="False"
+                                                      Click="DeleteRowMenuItem_Click" />
+                                        </ContextMenu>
+                                    </DataGrid.ContextMenu>
+                                </DataGrid>
                             </Grid>
                         </TabItem>
 
