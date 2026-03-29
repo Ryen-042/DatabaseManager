@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DatabaseManager.Core/DatabaseManager.Core.csproj" />
+    <Project Path="src/DatabaseManager.Wpf/DatabaseManager.Wpf.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DatabaseManager.Tests/DatabaseManager.Tests.csproj" />
+  </Folder>
+</Solution>
