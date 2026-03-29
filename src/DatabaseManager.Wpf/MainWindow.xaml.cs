@@ -22,6 +22,11 @@ public partial class MainWindow : Window
 {
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
+    private const int OutputSqlEditorTabIndex = 0;
+    private const int OutputSchemaTabIndex = 1;
+    private const int OutputResultsTabIndex = 2;
+    private const int OutputEditRowsTabIndex = 3;
+    private const int OutputProcedureRunnerTabIndex = 4;
 
     private readonly IDatabaseQueryService _databaseQueryService = new SqlServerQueryService();
     private readonly IRowEditService _rowEditService = new RowEditService();
@@ -69,7 +74,7 @@ public partial class MainWindow : Window
         ApplyTitleBarTheme(DarkModeCheckBox.IsChecked == true);
         await LoadTemplatesAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
-        OutputTabControl.SelectedIndex = 1;
+        OutputTabControl.SelectedIndex = OutputResultsTabIndex;
         UpdateSchemaDetailsPanelByAssistantTab();
         ApplyEditModeState();
         UpdateEditQueryTextFromInputs();
@@ -293,6 +298,7 @@ public partial class MainWindow : Window
 
         TemplateNameTextBox.Text = selected.Name;
         QueryTextBox.Text = selected.Sql;
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus($"Template '{selected.Name}' loaded into editor.");
     }
 
@@ -564,7 +570,7 @@ public partial class MainWindow : Window
             SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
             UpdateSchemaDetailsPanelByAssistantTab();
             UpdateEditQueryTextFromInputs();
-            OutputTabControl.SelectedIndex = 0;
+            OutputTabControl.SelectedIndex = OutputSchemaTabIndex;
         }
         catch (Exception ex)
         {
@@ -613,7 +619,7 @@ public partial class MainWindow : Window
             SelectedProcedureTextBlock.Text = $"{_selectedStoredProcedure.FullName} ({_selectedProcedureParameters.Count} parameters)";
             SchemaSummaryTextBlock.Text = $"Stored procedure selected: {_selectedStoredProcedure.FullName}";
             UpdateSchemaDetailsPanelByAssistantTab();
-            OutputTabControl.SelectedIndex = 0;
+            OutputTabControl.SelectedIndex = OutputSchemaTabIndex;
         }
         catch (Exception ex)
         {
@@ -639,6 +645,7 @@ public partial class MainWindow : Window
         }
 
         QueryTextBox.Text = _queryAssistantService.BuildSelectTopQuery(_selectedTable!);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated SELECT query from table metadata.");
     }
 
@@ -650,6 +657,7 @@ public partial class MainWindow : Window
         }
 
         QueryTextBox.Text = _queryAssistantService.BuildInsertQuery(_selectedTable!, _selectedColumns);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated INSERT query from table metadata.");
     }
 
@@ -662,6 +670,7 @@ public partial class MainWindow : Window
 
         var sql = _queryAssistantService.BuildUpdateQuery(_selectedTable!, _selectedColumns);
         QueryTextBox.Text = sql;
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
 
         SetStatus(sql.Contains("TODO", StringComparison.Ordinal)
             ? "Generated UPDATE query. No primary key detected, so WHERE clause needs manual fix."
@@ -677,6 +686,7 @@ public partial class MainWindow : Window
 
         var sql = _queryAssistantService.BuildDeleteQuery(_selectedTable!, _selectedColumns);
         QueryTextBox.Text = sql;
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
 
         SetStatus(sql.Contains("TODO", StringComparison.Ordinal)
             ? "Generated DELETE query. No primary key detected, so WHERE clause needs manual fix."
@@ -691,6 +701,7 @@ public partial class MainWindow : Window
         }
 
         QueryTextBox.Text = _queryAssistantService.BuildTableSchemaText(_selectedTable!, _selectedColumns);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated table SQL schema text.");
     }
 
@@ -702,6 +713,7 @@ public partial class MainWindow : Window
         }
 
         QueryTextBox.Text = _queryAssistantService.BuildExecuteProcedureQuery(_selectedStoredProcedure!, _selectedProcedureParameters);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated EXEC query from stored procedure metadata.");
     }
 
@@ -727,7 +739,7 @@ public partial class MainWindow : Window
         }
 
         RunnerProcedureTextBlock.Text = $"Ready to execute {_selectedStoredProcedure!.FullName}";
-        OutputTabControl.SelectedIndex = 3;
+        OutputTabControl.SelectedIndex = OutputProcedureRunnerTabIndex;
         SetStatus("Loaded procedure parameters into runner.");
     }
 
@@ -890,7 +902,7 @@ public partial class MainWindow : Window
 
         _currentDataTable = result.DataTable;
         ResultsDataGrid.ItemsSource = _currentDataTable?.DefaultView;
-        OutputTabControl.SelectedIndex = 1;
+        OutputTabControl.SelectedIndex = OutputResultsTabIndex;
         ResultsSummaryTextBlock.Text = _currentDataTable is null
             ? $"Results ({result.AffectedRows} affected rows)"
             : $"Results ({_currentDataTable.Rows.Count} rows, {_currentDataTable.Columns.Count} columns)";
@@ -963,6 +975,17 @@ public partial class MainWindow : Window
 
         Clipboard.SetText(copiedText);
         SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+    }
+
+    private void DataGrid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
+    {
+        if (e.Column.Header is not string headerText || string.IsNullOrEmpty(headerText))
+        {
+            return;
+        }
+
+        // In WPF headers, '_' is treated as an access-key marker; doubling it renders a literal underscore.
+        e.Column.Header = headerText.Replace("_", "__", StringComparison.Ordinal);
     }
 
     private void SchemaListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -1162,7 +1185,7 @@ public partial class MainWindow : Window
             _currentDataTable = _editableResultsTable;
             EditRowsDataGrid.ItemsSource = _editableResultsTable.DefaultView;
             EditRowsSummaryTextBlock.Text = $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
-            OutputTabControl.SelectedIndex = 2;
+            OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
             ApplyEditModeState();
 
             SetStatus($"Edit mode ready for {_selectedTable.FullName}.");

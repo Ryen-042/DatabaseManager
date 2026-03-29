@@ -169,51 +169,42 @@
 
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="2*" />
                 </Grid.RowDefinitions>
 
-                <WrapPanel Grid.Row="0" Margin="0,0,0,10" VerticalAlignment="Center">
-                    <ToggleButton x:Name="SchemaPaneToggleButton"
-                                  Content="Object Explorer"
-                                  IsChecked="True"
-                                  Margin="0,0,14,0"
-                                  Checked="SchemaPaneToggleButton_Checked"
-                                  Unchecked="SchemaPaneToggleButton_Unchecked" />
-                    <Button Content="Generate SELECT" Margin="0,0,8,0" Click="GenerateSelectButton_Click" />
-                    <Button Content="Generate INSERT" Margin="0,0,8,0" Click="GenerateInsertButton_Click" />
-                    <Button Content="Generate UPDATE" Margin="0,0,8,0" Click="GenerateUpdateButton_Click" />
-                    <Button Content="Generate DELETE" Margin="0,0,8,0" Click="GenerateDeleteButton_Click" />
-                    <Button Content="Generate EXEC" Margin="0,0,8,0" Click="GenerateExecButton_Click" />
-                </WrapPanel>
-
-                <TextBlock Grid.Row="1"
-                           Margin="0,0,0,8"
-                           FontWeight="SemiBold"
-                           FontSize="14"
-                           Text="SQL Query" />
-
-                <TextBox x:Name="QueryTextBox"
-                         Grid.Row="2"
-                         Margin="0,0,0,12"
-                         Padding="10"
-                         AcceptsReturn="True"
-                         AcceptsTab="True"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         TextWrapping="NoWrap"
-                         FontFamily="Consolas"
-                         FontSize="13" />
-
-                <Border Grid.Row="3"
+                <Border Grid.Row="0"
                         Padding="12"
                         CornerRadius="8"
                         BorderThickness="1"
                         BorderBrush="{DynamicResource BorderBrush}"
                         Background="{DynamicResource SurfaceBrush}">
                     <TabControl x:Name="OutputTabControl">
+                        <TabItem Header="SQL Editor">
+                            <Grid Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0"
+                                           Margin="0,0,0,8"
+                                           FontWeight="SemiBold"
+                                           FontSize="14"
+                                           Text="SQL Query" />
+
+                                <TextBox x:Name="QueryTextBox"
+                                         Grid.Row="1"
+                                         Padding="10"
+                                         AcceptsReturn="True"
+                                         AcceptsTab="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         TextWrapping="NoWrap"
+                                         FontFamily="Consolas"
+                                         FontSize="13" />
+                            </Grid>
+                        </TabItem>
+
                         <TabItem Header="Schema">
                             <Grid Margin="8">
                                 <Grid.RowDefinitions>
@@ -430,6 +421,7 @@
                                           Margin="0,10,0,0"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="True"
+                                          AutoGeneratingColumn="DataGrid_AutoGeneratingColumn"
                                           HeadersVisibility="All"
                                           CanUserAddRows="False"
                                           CanUserDeleteRows="False"
@@ -514,7 +506,8 @@
                     <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="100" />
-                    <ColumnDefinition Width="160" />
+                    <ColumnDefinition Width="170" />
+                    <ColumnDefinition Width="120" />
                 </Grid.ColumnDefinitions>
 
                 <TextBox x:Name="ConnectionStringTextBox"
@@ -547,8 +540,16 @@
                         Foreground="{DynamicResource DangerForegroundBrush}"
                         IsEnabled="False"
                         Click="CancelButton_Click" />
+                <CheckBox x:Name="SchemaPaneToggleButton"
+                      Grid.Column="5"
+                      Content="Object Explorer"
+                      VerticalAlignment="Center"
+                      IsChecked="True"
+                      Margin="0,0,8,0"
+                      Checked="SchemaPaneToggleButton_Checked"
+                      Unchecked="SchemaPaneToggleButton_Unchecked" />
                 <CheckBox x:Name="DarkModeCheckBox"
-                          Grid.Column="5"
+                      Grid.Column="6"
                           Content="Dark mode"
                           VerticalAlignment="Center"
                           IsChecked="True"
