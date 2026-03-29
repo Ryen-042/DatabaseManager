@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private TableSchemaInfo? _selectedTable;
     private StoredProcedureSchemaInfo? _selectedStoredProcedure;
     private readonly ObservableCollection<ProcedureParameterEditorRow> _runnerParameterRows = new();
+    private readonly GridLength _schemaPaneExpandedWidth = new(330);
 
     public MainWindow()
     {
@@ -59,6 +60,45 @@ public partial class MainWindow : Window
         ApplyTitleBarTheme(DarkModeCheckBox.IsChecked == true);
         await LoadTemplatesAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
+        OutputTabControl.SelectedIndex = 1;
+        SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
+    }
+
+    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        if (e.Key == Key.E)
+        {
+            RunQueryButton_Click(RunQueryButton, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Q)
+        {
+            CancelButton_Click(CancelButton, new RoutedEventArgs());
+            e.Handled = true;
+        }
+    }
+
+    private void SchemaPaneToggleButton_Checked(object sender, RoutedEventArgs e)
+    {
+        SchemaAssistantColumn.Width = _schemaPaneExpandedWidth;
+        SchemaAssistantSplitterColumn.Width = new GridLength(6);
+        SchemaAssistantPanel.Visibility = Visibility.Visible;
+        SchemaPanelSplitter.Visibility = Visibility.Visible;
+    }
+
+    private void SchemaPaneToggleButton_Unchecked(object sender, RoutedEventArgs e)
+    {
+        SchemaAssistantColumn.Width = new GridLength(0);
+        SchemaAssistantSplitterColumn.Width = new GridLength(0);
+        SchemaAssistantPanel.Visibility = Visibility.Collapsed;
+        SchemaPanelSplitter.Visibility = Visibility.Collapsed;
     }
 
     private void DarkModeCheckBox_Checked(object sender, RoutedEventArgs e)
@@ -308,6 +348,7 @@ public partial class MainWindow : Window
             TableColumnsDataGrid.ItemsSource = null;
             TableSqlDefinitionTextBox.Text = string.Empty;
             SelectedTableTextBlock.Text = "Select a table to inspect columns.";
+            SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
             return;
         }
 
@@ -323,6 +364,9 @@ public partial class MainWindow : Window
             TableColumnsDataGrid.ItemsSource = _selectedColumns;
             TableSqlDefinitionTextBox.Text = _queryAssistantService.BuildTableSchemaText(_selectedTable, _selectedColumns);
             SelectedTableTextBlock.Text = $"{_selectedTable.FullName} ({_selectedColumns.Count} columns)";
+            SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
+            SchemaDetailsTabControl.SelectedIndex = 0;
+            OutputTabControl.SelectedIndex = 0;
         }
         catch (Exception ex)
         {
@@ -344,6 +388,7 @@ public partial class MainWindow : Window
             ProcedureParametersDataGrid.ItemsSource = null;
             ProcedureSqlDefinitionTextBox.Text = string.Empty;
             SelectedProcedureTextBlock.Text = "Select a stored procedure to inspect parameters.";
+            SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
             return;
         }
 
@@ -368,6 +413,9 @@ public partial class MainWindow : Window
                 : procedureDefinition;
 
             SelectedProcedureTextBlock.Text = $"{_selectedStoredProcedure.FullName} ({_selectedProcedureParameters.Count} parameters)";
+            SchemaSummaryTextBlock.Text = $"Stored procedure selected: {_selectedStoredProcedure.FullName}";
+            SchemaDetailsTabControl.SelectedIndex = 1;
+            OutputTabControl.SelectedIndex = 0;
         }
         catch (Exception ex)
         {
@@ -481,7 +529,7 @@ public partial class MainWindow : Window
         }
 
         RunnerProcedureTextBlock.Text = $"Ready to execute {_selectedStoredProcedure!.FullName}";
-        SchemaAssistantTabControl.SelectedIndex = 2;
+        OutputTabControl.SelectedIndex = 2;
         SetStatus("Loaded procedure parameters into runner.");
     }
 
@@ -547,6 +595,7 @@ public partial class MainWindow : Window
             ProcedureSqlDefinitionTextBox.Text = string.Empty;
             SelectedTableTextBlock.Text = "Select a table to inspect columns.";
             SelectedProcedureTextBlock.Text = "Select a stored procedure to inspect parameters.";
+            SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
 
             ApplyTableFilter();
             ApplyProcedureFilter();
@@ -639,6 +688,7 @@ public partial class MainWindow : Window
 
         _currentDataTable = result.DataTable;
         ResultsDataGrid.ItemsSource = _currentDataTable?.DefaultView;
+        OutputTabControl.SelectedIndex = 1;
         ResultsSummaryTextBlock.Text = _currentDataTable is null
             ? $"Results ({result.AffectedRows} affected rows)"
             : $"Results ({_currentDataTable.Rows.Count} rows, {_currentDataTable.Columns.Count} columns)";
@@ -712,7 +762,7 @@ public partial class MainWindow : Window
 
     private void SchemaListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not ListBox listBox)
+        if (sender is not ListBox)
         {
             return;
         }
@@ -742,6 +792,26 @@ public partial class MainWindow : Window
 
         Clipboard.SetText(copiedText);
         SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+    }
+
+    private void CopySelectedObjectNameMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedName = TablesListBox.SelectedItem switch
+        {
+            TableSchemaInfo table => table.FullName,
+            _ => StoredProceduresListBox.SelectedItem is StoredProcedureSchemaInfo procedure
+                ? procedure.FullName
+                : string.Empty
+        };
+
+        if (string.IsNullOrWhiteSpace(selectedName))
+        {
+            SetStatus("Select a table or stored procedure first.");
+            return;
+        }
+
+        Clipboard.SetText(selectedName);
+        SetStatus($"Copied value to clipboard: {selectedName}");
     }
 
     private static string? TryGetClickedCellText(DataGridCell cell)

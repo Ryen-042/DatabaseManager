@@ -52,9 +52,46 @@
                 <Setter Property="Background" Value="{DynamicResource MutedBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Padding" Value="10,4" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="TabBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="3,3,0,0"
+                                    Margin="0,0,2,0"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter ContentSource="Header"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource TabActiveBrush}" />
+                                    <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource TabActiveBorderBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                    <Setter Property="Panel.ZIndex" Value="1" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="TabBorder" Property="Opacity" Value="0.92" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
                 <Style.Triggers>
                     <Trigger Property="IsSelected" Value="True">
-                        <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                        <Setter Property="Background" Value="{DynamicResource TabActiveBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource TabActiveBorderBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                     </Trigger>
                 </Style.Triggers>
             </Style>
@@ -109,6 +146,134 @@
                         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                     </Trigger>
                 </Style.Triggers>
+            </Style>
+
+            <Style TargetType="ToggleButton">
+                <Setter Property="Background" Value="{DynamicResource MutedBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="12,7" />
+                <Setter Property="MinHeight" Value="30" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="ToggleBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="2"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  RecognizesAccessKey="True" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ToggleBorder" Property="Opacity" Value="0.92" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="ToggleBorder" Property="Opacity" Value="0.82" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource MutedBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="ContextMenu">
+                <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="2" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="4"
+                                    SnapsToDevicePixels="True">
+                                <StackPanel IsItemsHost="True"
+                                            KeyboardNavigation.DirectionalNavigation="Cycle" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="MenuItem">
+                <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="MenuItemBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="2"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter ContentSource="Header"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  RecognizesAccessKey="True"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="MenuItemBorder" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                    <Setter TargetName="MenuItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="MenuItemBorder" Property="Background" Value="{DynamicResource PanelBrush}" />
+                                    <Setter TargetName="MenuItemBorder" Property="BorderBrush" Value="Transparent" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                    <Setter Property="Opacity" Value="0.9" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                        <Setter Property="Opacity" Value="1" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style TargetType="Separator">
+                <Setter Property="Margin" Value="10,3" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Separator">
+                            <Border Height="1"
+                                    Background="{DynamicResource MutedBrush}"
+                                    Opacity="0.55"
+                                    SnapsToDevicePixels="True" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style TargetType="CheckBox">
