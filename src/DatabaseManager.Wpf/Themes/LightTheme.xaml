@@ -10,6 +10,8 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#FFD3D9E5" />
     <SolidColorBrush x:Key="AccentBrush" Color="#FF0A7EA4" />
     <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FFC33D3D" />
+    <SolidColorBrush x:Key="DangerForegroundBrush" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="MutedBrush" Color="#FFE8EDF5" />
     <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#FFEAF5EF" />
     <SolidColorBrush x:Key="StatusForegroundBrush" Color="#FF264D36" />

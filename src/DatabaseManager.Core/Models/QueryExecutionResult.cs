@@ -13,4 +13,6 @@ public sealed class QueryExecutionResult
     public int AffectedRows { get; init; }
 
     public TimeSpan Duration { get; init; }
+
+    public IReadOnlyDictionary<string, object?>? OutputParameters { get; init; }
 }

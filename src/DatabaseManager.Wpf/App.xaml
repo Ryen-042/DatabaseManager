@@ -31,15 +31,82 @@
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             </Style>
 
+            <Style TargetType="ListBoxItem">
+                <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource InputForegroundBrush}" />
+            </Style>
+
+            <Style TargetType="Expander">
+                <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            </Style>
+
+            <Style TargetType="TabControl">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            </Style>
+
+            <Style TargetType="TabItem">
+                <Setter Property="Background" Value="{DynamicResource MutedBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Style.Triggers>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style TargetType="ScrollViewer">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            </Style>
+
             <Style TargetType="Button">
                 <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="Padding" Value="12,7" />
+                <Setter Property="MinHeight" Value="30" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="ButtonBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="2"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  RecognizesAccessKey="True" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.92" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.82" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource MutedBrush}" />
+                                    <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
                 <Style.Triggers>
                     <Trigger Property="IsEnabled" Value="False">
-                        <Setter Property="Opacity" Value="0.6" />
+                        <Setter Property="Opacity" Value="1" />
+                        <Setter Property="Background" Value="{DynamicResource MutedBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                     </Trigger>
                 </Style.Triggers>
             </Style>
@@ -65,6 +132,19 @@
                 <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="Padding" Value="12,8" />
+            </Style>
+
+            <Style TargetType="DataGridCell">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="Padding" Value="12,6" />
+            </Style>
+
+            <Style TargetType="DataGridRow">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
