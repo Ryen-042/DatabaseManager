@@ -17,6 +17,7 @@ RUNTIME ?= win-x64
 # - rebuild: Clean then build.
 # - publish: Framework-dependent publish for WPF app.
 # - publish-self-contained: Self-contained single-file Windows publish.
+# - publish-self-contained-optimized: Optimized self-contained publish (smaller size, WPF-safe).
 # - format: Run dotnet format.
 #
 # Recommended WPF flow from clean to run:
@@ -30,19 +31,20 @@ RUNTIME ?= win-x64
 #   make run CONFIG=Debug
 # ----------------------------------------------------------------------------
 
-.PHONY: help restore build test run clean rebuild publish publish-self-contained format
+.PHONY: help restore build test run clean rebuild publish publish-self-contained publish-self-contained-optimized format
 
 help:
 	@echo "Available targets:"
-	@echo "  make restore                 - Restore NuGet packages"
-	@echo "  make build [CONFIG=Debug]    - Build solution"
-	@echo "  make test [CONFIG=Debug]     - Run tests"
-	@echo "  make run                     - Run WPF app"
-	@echo "  make clean                   - Clean build outputs"
-	@echo "  make rebuild                 - Clean and build"
-	@echo "  make publish [CONFIG=Release]- Framework-dependent publish"
-	@echo "  make publish-self-contained  - Self-contained publish for Windows"
-	@echo "  make format                  - Format code"
+	@echo "  make restore                              - Restore NuGet packages"
+	@echo "  make build [CONFIG=Debug]                 - Build solution"
+	@echo "  make test [CONFIG=Debug]                  - Run tests"
+	@echo "  make run                                  - Run WPF app"
+	@echo "  make clean                                - Clean build outputs"
+	@echo "  make rebuild                              - Clean and build"
+	@echo "  make publish [CONFIG=Release]             - Framework-dependent publish"
+	@echo "  make publish-self-contained               - Basic self-contained single-file publish"
+	@echo "  make publish-self-contained-optimized     - Optimized self-contained publish (smaller size, WPF-safe)"
+	@echo "  make format                               - Format code"
 	@echo ""
 	@echo "WPF clean-to-run flow:"
 	@echo "  make clean CONFIG=Debug"
@@ -75,7 +77,24 @@ publish:
 	dotnet publish $(APP_PROJECT) -c $(CONFIG) -f $(FRAMEWORK) --self-contained false
 
 publish-self-contained:
-	dotnet publish $(APP_PROJECT) -c $(CONFIG) -f $(FRAMEWORK) -r $(RUNTIME) --self-contained true /p:PublishSingleFile=true
+	dotnet publish $(APP_PROJECT) \
+		-c $(CONFIG) \
+		-f $(FRAMEWORK) \
+		-r $(RUNTIME) \
+		--self-contained true \
+		/p:PublishSingleFile=true \
+		/p:EnableCompressionInSingleFile=true
+
+publish-self-contained-optimized:
+	dotnet publish $(APP_PROJECT) \
+		-c Release \
+		-f $(FRAMEWORK) \
+		-r $(RUNTIME) \
+		--self-contained true \
+		/p:PublishSingleFile=true \
+		/p:EnableCompressionInSingleFile=true \
+		/p:DebugType=None \
+		/p:DebugSymbols=false
 
 format:
 	dotnet format $(SOLUTION)
