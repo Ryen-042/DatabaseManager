@@ -41,7 +41,7 @@
 
                     <TextBlock Text="Schema Assistant" FontSize="14" FontWeight="SemiBold" />
 
-                    <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,10,0,0">
+                    <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,10,0,0" SelectionChanged="SchemaAssistantTabControl_SelectionChanged">
                         <TabItem Header="Tables">
                             <Grid Margin="8">
                                 <Grid.RowDefinitions>
@@ -64,7 +64,6 @@
                                          DisplayMemberPath="FullName"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         PreviewMouseLeftButtonUp="SchemaListBox_PreviewMouseLeftButtonUp"
                                          SelectionChanged="TablesListBox_SelectionChanged">
                                     <ListBox.ContextMenu>
                                         <ContextMenu>
@@ -102,7 +101,6 @@
                                          DisplayMemberPath="FullName"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         PreviewMouseLeftButtonUp="SchemaListBox_PreviewMouseLeftButtonUp"
                                          SelectionChanged="StoredProceduresListBox_SelectionChanged">
                                     <ListBox.ContextMenu>
                                         <ContextMenu>
@@ -184,13 +182,11 @@
                                   Margin="0,0,14,0"
                                   Checked="SchemaPaneToggleButton_Checked"
                                   Unchecked="SchemaPaneToggleButton_Unchecked" />
-                    <Button Content="Refresh Schema" Margin="0,0,8,0" Click="RefreshSchemaButton_Click" />
                     <Button Content="Generate SELECT" Margin="0,0,8,0" Click="GenerateSelectButton_Click" />
                     <Button Content="Generate INSERT" Margin="0,0,8,0" Click="GenerateInsertButton_Click" />
                     <Button Content="Generate UPDATE" Margin="0,0,8,0" Click="GenerateUpdateButton_Click" />
                     <Button Content="Generate DELETE" Margin="0,0,8,0" Click="GenerateDeleteButton_Click" />
                     <Button Content="Generate EXEC" Margin="0,0,8,0" Click="GenerateExecButton_Click" />
-                    <Button Content="Open Runner" Margin="0,0,8,0" Click="OpenRunnerButton_Click" />
                 </WrapPanel>
 
                 <TextBlock Grid.Row="1"
@@ -229,87 +225,87 @@
                                            FontWeight="SemiBold"
                                            Text="Select a table or stored procedure from Schema Assistant." />
 
-                                <TabControl x:Name="SchemaDetailsTabControl" Grid.Row="1" Margin="0,10,0,0">
-                                    <TabItem Header="Table Details">
-                                        <Grid Margin="8">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
+                                <Grid Grid.Row="1" Margin="0,10,0,0">
+                                    <Grid x:Name="TableDetailsPanel" Visibility="Visible">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="2*" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
 
-                                            <TextBlock x:Name="SelectedTableTextBlock"
-                                                       FontWeight="SemiBold"
-                                                       Text="Select a table to inspect columns." />
+                                        <TextBlock x:Name="SelectedTableTextBlock"
+                                                   FontWeight="SemiBold"
+                                                   Text="Select a table to inspect columns." />
 
-                                            <DataGrid x:Name="TableColumnsDataGrid"
-                                                      Grid.Row="1"
-                                                      Margin="0,8,0,8"
-                                                      IsReadOnly="True"
-                                                      AutoGenerateColumns="True"
-                                                      HeadersVisibility="All"
-                                                      CanUserAddRows="False"
-                                                      CanUserDeleteRows="False"
-                                                      PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
+                                        <DataGrid x:Name="TableColumnsDataGrid"
+                                                  Grid.Row="1"
+                                                  Margin="0,8,0,8"
+                                                  MinHeight="220"
+                                                  IsReadOnly="True"
+                                                  AutoGenerateColumns="True"
+                                                  HeadersVisibility="All"
+                                                  CanUserAddRows="False"
+                                                  CanUserDeleteRows="False"
+                                                  PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
 
-                                            <TextBlock Grid.Row="2"
-                                                       Margin="0,0,0,6"
-                                                       FontWeight="SemiBold"
-                                                       Text="Table SQL Definition" />
+                                        <TextBlock Grid.Row="2"
+                                                   Margin="0,0,0,6"
+                                                   FontWeight="SemiBold"
+                                                   Text="Table SQL Definition" />
 
-                                            <TextBox x:Name="TableSqlDefinitionTextBox"
-                                                     Grid.Row="3"
-                                                     IsReadOnly="True"
-                                                     AcceptsReturn="True"
-                                                     VerticalScrollBarVisibility="Auto"
-                                                     HorizontalScrollBarVisibility="Auto"
-                                                     TextWrapping="NoWrap"
-                                                     FontFamily="Consolas"
-                                                     FontSize="12" />
-                                        </Grid>
-                                    </TabItem>
+                                        <TextBox x:Name="TableSqlDefinitionTextBox"
+                                                 Grid.Row="3"
+                                                 MinHeight="160"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 TextWrapping="NoWrap"
+                                                 FontFamily="Consolas"
+                                                 FontSize="12" />
+                                    </Grid>
 
-                                    <TabItem Header="Procedure Details">
-                                        <Grid Margin="8">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
+                                    <Grid x:Name="ProcedureDetailsPanel" Visibility="Collapsed">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="2*" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
 
-                                            <TextBlock x:Name="SelectedProcedureTextBlock"
-                                                       FontWeight="SemiBold"
-                                                       Text="Select a stored procedure to inspect parameters." />
+                                        <TextBlock x:Name="SelectedProcedureTextBlock"
+                                                   FontWeight="SemiBold"
+                                                   Text="Select a stored procedure to inspect parameters." />
 
-                                            <DataGrid x:Name="ProcedureParametersDataGrid"
-                                                      Grid.Row="1"
-                                                      Margin="0,8,0,8"
-                                                      IsReadOnly="True"
-                                                      AutoGenerateColumns="True"
-                                                      HeadersVisibility="All"
-                                                      CanUserAddRows="False"
-                                                      CanUserDeleteRows="False"
-                                                      PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
+                                        <DataGrid x:Name="ProcedureParametersDataGrid"
+                                                  Grid.Row="1"
+                                                  Margin="0,8,0,8"
+                                                  MinHeight="220"
+                                                  IsReadOnly="True"
+                                                  AutoGenerateColumns="True"
+                                                  HeadersVisibility="All"
+                                                  CanUserAddRows="False"
+                                                  CanUserDeleteRows="False"
+                                                  PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
 
-                                            <TextBlock Grid.Row="2"
-                                                       Margin="0,0,0,6"
-                                                       FontWeight="SemiBold"
-                                                       Text="Procedure SQL Definition" />
+                                        <TextBlock Grid.Row="2"
+                                                   Margin="0,0,0,6"
+                                                   FontWeight="SemiBold"
+                                                   Text="Procedure SQL Definition" />
 
-                                            <TextBox x:Name="ProcedureSqlDefinitionTextBox"
-                                                     Grid.Row="3"
-                                                     IsReadOnly="True"
-                                                     AcceptsReturn="True"
-                                                     VerticalScrollBarVisibility="Auto"
-                                                     HorizontalScrollBarVisibility="Auto"
-                                                     TextWrapping="NoWrap"
-                                                     FontFamily="Consolas"
-                                                     FontSize="12" />
-                                        </Grid>
-                                    </TabItem>
-                                </TabControl>
+                                        <TextBox x:Name="ProcedureSqlDefinitionTextBox"
+                                                 Grid.Row="3"
+                                                 MinHeight="160"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 TextWrapping="NoWrap"
+                                                 FontFamily="Consolas"
+                                                 FontSize="12" />
+                                    </Grid>
+                                </Grid>
                             </Grid>
                         </TabItem>
 

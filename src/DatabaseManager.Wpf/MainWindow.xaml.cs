@@ -61,7 +61,18 @@ public partial class MainWindow : Window
         await LoadTemplatesAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
         OutputTabControl.SelectedIndex = 1;
+        UpdateSchemaDetailsPanelByAssistantTab();
         SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
+    }
+
+    private void SchemaAssistantTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        UpdateSchemaDetailsPanelByAssistantTab();
     }
 
     private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -365,7 +376,7 @@ public partial class MainWindow : Window
             TableSqlDefinitionTextBox.Text = _queryAssistantService.BuildTableSchemaText(_selectedTable, _selectedColumns);
             SelectedTableTextBlock.Text = $"{_selectedTable.FullName} ({_selectedColumns.Count} columns)";
             SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
-            SchemaDetailsTabControl.SelectedIndex = 0;
+            UpdateSchemaDetailsPanelByAssistantTab();
             OutputTabControl.SelectedIndex = 0;
         }
         catch (Exception ex)
@@ -414,7 +425,7 @@ public partial class MainWindow : Window
 
             SelectedProcedureTextBlock.Text = $"{_selectedStoredProcedure.FullName} ({_selectedProcedureParameters.Count} parameters)";
             SchemaSummaryTextBlock.Text = $"Stored procedure selected: {_selectedStoredProcedure.FullName}";
-            SchemaDetailsTabControl.SelectedIndex = 1;
+            UpdateSchemaDetailsPanelByAssistantTab();
             OutputTabControl.SelectedIndex = 0;
         }
         catch (Exception ex)
@@ -885,6 +896,21 @@ public partial class MainWindow : Window
         }
 
         return value[..maxLength] + "...";
+    }
+
+    private void UpdateSchemaDetailsPanelByAssistantTab()
+    {
+        var selectedIndex = SchemaAssistantTabControl.SelectedIndex;
+        var showTableDetails = selectedIndex == 0;
+        var showProcedureDetails = selectedIndex == 1;
+
+        TableDetailsPanel.Visibility = showTableDetails ? Visibility.Visible : Visibility.Collapsed;
+        ProcedureDetailsPanel.Visibility = showProcedureDetails ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!showTableDetails && !showProcedureDetails)
+        {
+            SchemaSummaryTextBlock.Text = "Open Tables or Stored Procedures tab to display schema details.";
+        }
     }
 
     private sealed class ProcedureParameterEditorRow
