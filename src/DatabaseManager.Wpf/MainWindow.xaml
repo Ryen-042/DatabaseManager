@@ -261,13 +261,19 @@
                                 <DataGrid x:Name="EditRowsDataGrid"
                                           Grid.Row="3"
                                           Margin="0,10,0,0"
+                                          FlowDirection="LeftToRight"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="True"
                                           AutoGeneratingColumn="ResultsDataGrid_AutoGeneratingColumn"
                                           HeadersVisibility="All"
+                                          SelectionUnit="CellOrRowHeader"
                                           CanUserAddRows="True"
                                           CanUserDeleteRows="False"
+                                          LoadingRow="EditRowsDataGrid_LoadingRow"
+                                          CurrentCellChanged="EditRowsDataGrid_CurrentCellChanged"
+                                          CellEditEnding="EditRowsDataGrid_CellEditEnding"
                                           PreviewMouseRightButtonDown="ResultsDataGrid_PreviewMouseRightButtonDown"
+                                          PreviewMouseLeftButtonDown="EditRowsDataGrid_PreviewMouseLeftButtonDown"
                                           PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp">
                                     <DataGrid.ContextMenu>
                                         <ContextMenu>

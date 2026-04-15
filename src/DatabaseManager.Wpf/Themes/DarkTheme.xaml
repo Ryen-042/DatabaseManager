@@ -21,4 +21,10 @@
     <SolidColorBrush x:Key="ScrollBarThumbPressedBrush" Color="#FF0F7FA6" />
     <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#FF173528" />
     <SolidColorBrush x:Key="StatusForegroundBrush" Color="#FFC4F2DA" />
+    <SolidColorBrush x:Key="AddedRowBrush" Color="#FF1A3C55" />
+    <SolidColorBrush x:Key="ModifiedRowBrush" Color="#FF244935" />
+    <SolidColorBrush x:Key="DeletedRowBrush" Color="#FF4A2A2A" />
+    <SolidColorBrush x:Key="SelectionBrush" Color="#FF1F5F8A" />
+    <SolidColorBrush x:Key="CurrentCellBrush" Color="#FF2274A8" />
+    <SolidColorBrush x:Key="HoverRowBrush" Color="#FF223142" />
 </ResourceDictionary>

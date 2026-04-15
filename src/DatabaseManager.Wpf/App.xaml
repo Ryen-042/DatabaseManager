@@ -381,11 +381,73 @@
                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="RowHeaderWidth" Value="28" />
                 <Setter Property="GridLinesVisibility" Value="Horizontal" />
                 <Setter Property="RowBackground" Value="{DynamicResource SurfaceBrush}" />
                 <Setter Property="AlternatingRowBackground" Value="{DynamicResource MutedBrush}" />
                 <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderBrush}" />
                 <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource BorderBrush}" />
+            </Style>
+
+            <Style TargetType="DataGridRowHeader">
+                <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,1,1" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="Added">
+                        <Setter Property="Background" Value="{DynamicResource AddedRowBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="Modified">
+                        <Setter Property="Background" Value="{DynamicResource ModifiedRowBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="Deleted">
+                        <Setter Property="Background" Value="{DynamicResource DeletedRowBrush}" />
+                    </DataTrigger>
+                    <Trigger Property="IsRowSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="{ComponentResourceKey TypeInTargetAssembly={x:Type DataGrid}, ResourceId=DataGridSelectAllButtonStyle}"
+                   TargetType="Button">
+                <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,1,1" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid>
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}" />
+                                <Path HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Data="M 0 8 L 8 8 L 8 0"
+                                      Fill="{TemplateBinding Foreground}"
+                                      Stretch="Uniform"
+                                      Width="8"
+                                      Height="8" />
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource HoverRowBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style TargetType="DataGridColumnHeader">
@@ -399,12 +461,47 @@
                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,1,1" />
                 <Setter Property="Padding" Value="12,6" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=Tag}" Value="Added">
+                        <Setter Property="Background" Value="{DynamicResource AddedRowBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=Tag}" Value="Modified">
+                        <Setter Property="Background" Value="{DynamicResource ModifiedRowBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=Tag}" Value="Deleted">
+                        <Setter Property="Background" Value="{DynamicResource DeletedRowBrush}" />
+                    </DataTrigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource CurrentCellBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                    </Trigger>
+                    <Trigger Property="IsEditing" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource InputForegroundBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                    </Trigger>
+                </Style.Triggers>
             </Style>
 
             <Style TargetType="DataGridRow">
                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource HoverRowBrush}" />
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                    </Trigger>
+                </Style.Triggers>
             </Style>
         </ResourceDictionary>
     </Application.Resources>

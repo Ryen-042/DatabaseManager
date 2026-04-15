@@ -9,6 +9,8 @@ using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Controls.Primitives;
+using System.Windows.Threading;
 using DatabaseManager.Core.Models.Editing;
 using DatabaseManager.Core.Models;
 using DatabaseManager.Core.Models.Schema;
@@ -80,6 +82,7 @@ public partial class MainWindow : Window
         OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
         UpdateSchemaDetailsPanelByAssistantTab();
         ApplyEditModeState();
+        ApplyEditRowsCornerButtonStyle();
         UpdateEditQueryTextFromInputs();
         await ConnectToDatabaseAsync(triggeredOnStartup: true);
         if (_tables.Count == 0 && _storedProcedures.Count == 0)
@@ -147,12 +150,14 @@ public partial class MainWindow : Window
     {
         App.ApplyTheme(true);
         ApplyTitleBarTheme(true);
+        ApplyEditRowsCornerButtonStyle();
     }
 
     private void DarkModeCheckBox_Unchecked(object sender, RoutedEventArgs e)
     {
         App.ApplyTheme(false);
         ApplyTitleBarTheme(false);
+        ApplyEditRowsCornerButtonStyle();
     }
 
     private void ApplyTitleBarTheme(bool darkMode)
@@ -375,12 +380,67 @@ public partial class MainWindow : Window
 
     private async void EnterEditModeButton_Click(object sender, RoutedEventArgs e)
     {
-        await LoadEditableRowsAsync();
+        await RefreshEditRowsAsync();
     }
 
     private async void ApplyEditFilterButton_Click(object sender, RoutedEventArgs e)
     {
-        await LoadEditableRowsAsync();
+        await RefreshEditRowsAsync();
+    }
+
+    private void EditRowsDataGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_isEditMode)
+        {
+            return;
+        }
+
+        var checkBox = FindAncestor<CheckBox>(e.OriginalSource as DependencyObject);
+        if (checkBox is null)
+        {
+            return;
+        }
+
+        var cell = FindAncestor<DataGridCell>(checkBox);
+        var row = FindAncestor<DataGridRow>(checkBox);
+        if (cell is null || row is null || cell.IsReadOnly)
+        {
+            return;
+        }
+
+        EditRowsDataGrid.SelectedItem = row.Item;
+        EditRowsDataGrid.CurrentCell = new DataGridCellInfo(row.Item, cell.Column);
+        if (!cell.IsEditing)
+        {
+            EditRowsDataGrid.BeginEdit(e);
+        }
+
+        checkBox.IsChecked = !(checkBox.IsChecked ?? false);
+
+        var bindingExpression = BindingOperations.GetBindingExpression(checkBox, ToggleButton.IsCheckedProperty);
+        bindingExpression?.UpdateSource();
+
+        EditRowsDataGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+        EditRowsDataGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        RefreshEditRowsVisualStates();
+
+        e.Handled = true;
+    }
+
+    private void EditRowsDataGrid_LoadingRow(object sender, DataGridRowEventArgs e)
+    {
+        ApplyEditRowsRowVisualState(e.Row);
+        ApplyEditRowsCornerButtonStyle();
+    }
+
+    private void EditRowsDataGrid_CurrentCellChanged(object? sender, EventArgs e)
+    {
+        RefreshEditRowsVisualStates();
+    }
+
+    private void EditRowsDataGrid_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
+    {
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RefreshEditRowsVisualStates));
     }
 
     private async void SaveRowChangesButton_Click(object sender, RoutedEventArgs e)
@@ -437,6 +497,7 @@ public partial class MainWindow : Window
 
             _editableResultsTable.AcceptChanges();
             SetStatus($"Saved changes successfully ({affectedRows} row(s) affected).");
+            RefreshEditRowsVisualStates();
             return true;
         }
         catch (Exception ex)
@@ -459,6 +520,7 @@ public partial class MainWindow : Window
 
         _editableResultsTable.RejectChanges();
         SetStatus("Discarded unsaved row changes.");
+        RefreshEditRowsVisualStates();
     }
 
     private void ResultsDataGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -545,6 +607,7 @@ public partial class MainWindow : Window
             _editableResultsTable.Rows.Remove(selectedRowView.Row);
             _editableResultsTable.AcceptChanges();
             SetStatus("Row deleted successfully.");
+            RefreshEditRowsVisualStates();
         }
         catch (Exception ex)
         {
@@ -610,6 +673,8 @@ public partial class MainWindow : Window
             SelectedTableTextBlock.Text = "Select a table to inspect columns.";
             SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
             UpdateEditQueryTextFromInputs();
+            ExitEditModeAndClearEditableRows();
+            EditRowsDataGrid.ItemsSource = null;
             return;
         }
 
@@ -628,6 +693,7 @@ public partial class MainWindow : Window
             SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
             UpdateSchemaDetailsPanelByAssistantTab();
             UpdateEditQueryTextFromInputs();
+            ShowSelectedTableColumnsInEditRowsGrid();
             OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
         }
         catch (Exception ex)
@@ -866,6 +932,8 @@ public partial class MainWindow : Window
             SelectedTableTextBlock.Text = "Select a table to inspect columns.";
             SelectedProcedureTextBlock.Text = "Select a stored procedure to inspect parameters.";
             SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
+            ExitEditModeAndClearEditableRows();
+            EditRowsDataGrid.ItemsSource = null;
 
             ApplyTableFilter();
             ApplyProcedureFilter();
@@ -1254,6 +1322,15 @@ public partial class MainWindow : Window
 
         if (e.Column is not DataGridTextColumn textColumn)
         {
+            if (sender == EditRowsDataGrid && e.Column is DataGridCheckBoxColumn checkBoxColumn)
+            {
+                if (checkBoxColumn.Binding is Binding checkBoxBinding)
+                {
+                    checkBoxBinding.Mode = BindingMode.TwoWay;
+                    checkBoxBinding.UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged;
+                }
+            }
+
             return;
         }
 
@@ -1263,6 +1340,16 @@ public partial class MainWindow : Window
         }
 
         binding.Converter = ResultsValueConverter;
+
+        if (sender == EditRowsDataGrid)
+        {
+            var editingElementStyle = new Style(typeof(TextBox));
+            editingElementStyle.Setters.Add(new Setter(TextBox.BackgroundProperty, FindResource("InputBackgroundBrush")));
+            editingElementStyle.Setters.Add(new Setter(TextBox.ForegroundProperty, FindResource("InputForegroundBrush")));
+            editingElementStyle.Setters.Add(new Setter(TextBox.BorderBrushProperty, FindResource("AccentBrush")));
+            editingElementStyle.Setters.Add(new Setter(TextBox.BorderThicknessProperty, new Thickness(1)));
+            textColumn.EditingElementStyle = editingElementStyle;
+        }
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
@@ -1278,6 +1365,45 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private static T? FindDescendantByName<T>(DependencyObject current, string targetName) where T : FrameworkElement
+    {
+        var childrenCount = VisualTreeHelper.GetChildrenCount(current);
+        for (var i = 0; i < childrenCount; i++)
+        {
+            var child = VisualTreeHelper.GetChild(current, i);
+            if (child is T typed && string.Equals(typed.Name, targetName, StringComparison.Ordinal))
+            {
+                return typed;
+            }
+
+            var foundInChild = FindDescendantByName<T>(child, targetName);
+            if (foundInChild is not null)
+            {
+                return foundInChild;
+            }
+        }
+
+        return null;
+    }
+
+    private void ApplyEditRowsCornerButtonStyle()
+    {
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            EditRowsDataGrid.ApplyTemplate();
+            var selectAllButton = FindDescendantByName<Button>(EditRowsDataGrid, "PART_SelectAllButton");
+            if (selectAllButton is null)
+            {
+                return;
+            }
+
+            selectAllButton.SetResourceReference(Control.BackgroundProperty, "PanelBrush");
+            selectAllButton.SetResourceReference(Control.ForegroundProperty, "TextSecondaryBrush");
+            selectAllButton.SetResourceReference(Control.BorderBrushProperty, "BorderBrush");
+            selectAllButton.BorderThickness = new Thickness(0, 0, 1, 1);
+        }));
     }
 
     private static string TruncateForStatus(string value)
@@ -1317,6 +1443,35 @@ public partial class MainWindow : Window
         {
             SchemaSummaryTextBlock.Text = "Open Tables or Stored Procedures tab to display schema details.";
         }
+    }
+
+    private void ExitEditModeAndClearEditableRows()
+    {
+        _isEditMode = false;
+        _editableResultsTable = null;
+        ApplyEditModeState();
+        RefreshEditRowsVisualStates();
+    }
+
+    private void ShowSelectedTableColumnsInEditRowsGrid()
+    {
+        ExitEditModeAndClearEditableRows();
+
+        if (_selectedTable is null || _selectedColumns.Count == 0)
+        {
+            EditRowsDataGrid.ItemsSource = null;
+            return;
+        }
+
+        var schemaPreviewTable = new DataTable();
+        foreach (var column in _selectedColumns.OrderBy(x => x.OrdinalPosition))
+        {
+            schemaPreviewTable.Columns.Add(column.ColumnName, typeof(object));
+        }
+
+        EditRowsDataGrid.ItemsSource = schemaPreviewTable.DefaultView;
+        EditRowsSummaryTextBlock.Text = $"Selected table: {_selectedTable.FullName} ({_selectedColumns.Count} columns). Click Load to fetch rows.";
+        RefreshEditRowsVisualStates();
     }
 
     private async Task RefreshEditRowsAsync()
@@ -1372,6 +1527,55 @@ public partial class MainWindow : Window
         return _editableResultsTable.Rows
             .Cast<DataRow>()
             .Any(row => row.RowState is DataRowState.Added or DataRowState.Modified or DataRowState.Deleted);
+    }
+
+    private void RefreshEditRowsVisualStates()
+    {
+        if (EditRowsDataGrid.Items.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = 0; i < EditRowsDataGrid.Items.Count; i++)
+        {
+            var row = EditRowsDataGrid.ItemContainerGenerator.ContainerFromIndex(i) as DataGridRow;
+            if (row is null)
+            {
+                continue;
+            }
+
+            ApplyEditRowsRowVisualState(row);
+        }
+    }
+
+    private void ApplyEditRowsRowVisualState(DataGridRow row)
+    {
+        row.Tag = null;
+
+        if (row.Item is not DataRowView rowView)
+        {
+            row.Header = row.GetIndex() + 1;
+            return;
+        }
+
+        switch (rowView.Row.RowState)
+        {
+            case DataRowState.Added:
+                row.Tag = "Added";
+                row.Header = "+";
+                break;
+            case DataRowState.Modified:
+                row.Tag = "Modified";
+                row.Header = "*";
+                break;
+            case DataRowState.Deleted:
+                row.Tag = "Deleted";
+                row.Header = "-";
+                break;
+            default:
+                row.Header = row.GetIndex() + 1;
+                break;
+        }
     }
 
     private async Task LoadEditableRowsAsync()
@@ -1436,6 +1640,7 @@ public partial class MainWindow : Window
             EditRowsSummaryTextBlock.Text = $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
             OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
             ApplyEditModeState();
+            RefreshEditRowsVisualStates();
 
             SetStatus($"Edit mode ready for {_selectedTable.FullName}.");
         }
