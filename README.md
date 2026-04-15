@@ -20,6 +20,18 @@ DatabaseManager combines query authoring, schema exploration, template managemen
 - Dark and light themes.
 - Object Explorer toggle and keyboard shortcuts.
 
+## Screenshots
+
+Save the screenshots under `docs/images/` using the filenames below, then they will render here automatically.
+
+### Edit Rows Tab
+
+![Edit Rows Tab](docs/images/edit-rows-tab.png)
+
+### Schema Tab
+
+![Schema Tab](docs/images/schema-tab.png)
+
 ## Tech Stack
 
 - UI: WPF (`net8.0-windows`)
