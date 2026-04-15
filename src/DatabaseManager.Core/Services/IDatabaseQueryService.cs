@@ -9,4 +9,11 @@ public interface IDatabaseQueryService
         string sql,
         int commandTimeoutSeconds,
         CancellationToken cancellationToken);
+
+    Task<QueryExecutionResult> ExecuteAsync(
+        string connectionString,
+        string sql,
+        IReadOnlyList<QueryParameterValue> parameters,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken);
 }

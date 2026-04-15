@@ -15,6 +15,10 @@
     <SolidColorBrush x:Key="DangerBrush" Color="#FFC33D3D" />
     <SolidColorBrush x:Key="DangerForegroundBrush" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="MutedBrush" Color="#FFE8EDF5" />
+    <SolidColorBrush x:Key="ScrollBarTrackBrush" Color="#FFE7EDF5" />
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#FFA5B8CD" />
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#FF86A6C3" />
+    <SolidColorBrush x:Key="ScrollBarThumbPressedBrush" Color="#FF0A7EA4" />
     <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#FFEAF5EF" />
     <SolidColorBrush x:Key="StatusForegroundBrush" Color="#FF264D36" />
 </ResourceDictionary>

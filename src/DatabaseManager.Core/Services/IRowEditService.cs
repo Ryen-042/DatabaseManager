@@ -25,6 +25,16 @@ public interface IRowEditService
         int commandTimeoutSeconds,
         CancellationToken cancellationToken);
 
+    Task<int> SaveRowChangesAsync(
+        string connectionString,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<ColumnSchemaInfo> columns,
+        IReadOnlyList<RowUpdateRequest> rowUpdates,
+        IReadOnlyList<RowInsertRequest> rowInserts,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken);
+
     Task<int> DeleteRowAsync(
         string connectionString,
         string schemaName,

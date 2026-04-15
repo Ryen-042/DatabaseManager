@@ -13,6 +13,36 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
         int commandTimeoutSeconds,
         CancellationToken cancellationToken)
     {
+        return await ExecuteInternalAsync(
+            connectionString,
+            sql,
+            parameters: null,
+            commandTimeoutSeconds,
+            cancellationToken);
+    }
+
+    public async Task<QueryExecutionResult> ExecuteAsync(
+        string connectionString,
+        string sql,
+        IReadOnlyList<QueryParameterValue> parameters,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        return await ExecuteInternalAsync(
+            connectionString,
+            sql,
+            parameters,
+            commandTimeoutSeconds,
+            cancellationToken);
+    }
+
+    private static async Task<QueryExecutionResult> ExecuteInternalAsync(
+        string connectionString,
+        string sql,
+        IReadOnlyList<QueryParameterValue>? parameters,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -24,6 +54,14 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
             {
                 CommandTimeout = commandTimeoutSeconds
             };
+
+            if (parameters is not null)
+            {
+                foreach (var parameter in parameters)
+                {
+                    command.Parameters.AddWithValue(parameter.Name, parameter.Value ?? DBNull.Value);
+                }
+            }
 
             if (LooksLikeReadQuery(sql))
             {

@@ -53,6 +53,27 @@ public sealed class RowEditService : IRowEditService
         int commandTimeoutSeconds,
         CancellationToken cancellationToken)
     {
+        return await SaveRowChangesAsync(
+            connectionString,
+            schemaName,
+            tableName,
+            columns,
+            rowUpdates,
+            Array.Empty<RowInsertRequest>(),
+            commandTimeoutSeconds,
+            cancellationToken);
+    }
+
+    public async Task<int> SaveRowChangesAsync(
+        string connectionString,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<ColumnSchemaInfo> columns,
+        IReadOnlyList<RowUpdateRequest> rowUpdates,
+        IReadOnlyList<RowInsertRequest> rowInserts,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
         var primaryKeys = columns.Where(c => c.IsPrimaryKey).Select(c => c.ColumnName).ToList();
         if (primaryKeys.Count == 0)
         {
@@ -60,11 +81,16 @@ public sealed class RowEditService : IRowEditService
         }
 
         var updatableColumns = columns
-            .Where(c => !c.IsPrimaryKey && !c.IsIdentity)
+            .Where(c => !c.IsPrimaryKey && !c.IsIdentity && !IsServerGeneratedColumn(c))
             .Select(c => c.ColumnName)
             .ToList();
 
-        if (updatableColumns.Count == 0 || rowUpdates.Count == 0)
+        var insertableColumns = columns
+            .Where(c => !c.IsIdentity && !IsServerGeneratedColumn(c))
+            .Select(c => c.ColumnName)
+            .ToList();
+
+        if ((updatableColumns.Count == 0 || rowUpdates.Count == 0) && rowInserts.Count == 0)
         {
             return 0;
         }
@@ -107,6 +133,34 @@ public sealed class RowEditService : IRowEditService
                 foreach (var key in primaryKeys)
                 {
                     command.Parameters.AddWithValue($"@key_{key}", ToDbValue(update.OriginalKeyValues[key]));
+                }
+
+                affectedRows += await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            foreach (var insert in rowInserts)
+            {
+                var valueColumns = insertableColumns
+                    .Where(name => insert.Values.ContainsKey(name))
+                    .ToList();
+
+                if (valueColumns.Count == 0)
+                {
+                    continue;
+                }
+
+                var columnClause = string.Join(", ", valueColumns.Select(c => $"[{EscapeIdentifier(c)}]"));
+                var valuesClause = string.Join(", ", valueColumns.Select(c => $"@ins_{c}"));
+                var sql = $"INSERT INTO [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] ({columnClause}) VALUES ({valuesClause});";
+
+                await using var command = new SqlCommand(sql, connection, transaction)
+                {
+                    CommandTimeout = commandTimeoutSeconds
+                };
+
+                foreach (var column in valueColumns)
+                {
+                    command.Parameters.AddWithValue($"@ins_{column}", ToDbValue(insert.Values[column]));
                 }
 
                 affectedRows += await command.ExecuteNonQueryAsync(cancellationToken);
@@ -177,6 +231,12 @@ public sealed class RowEditService : IRowEditService
     private static object ToDbValue(object? value)
     {
         return value ?? DBNull.Value;
+    }
+
+    private static bool IsServerGeneratedColumn(ColumnSchemaInfo column)
+    {
+        return column.DataType.Equals("rowversion", StringComparison.OrdinalIgnoreCase)
+            || column.DataType.Equals("timestamp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsurePrimaryKeyValues(IReadOnlyList<string> primaryKeys, IReadOnlyDictionary<string, object?> keyValues)

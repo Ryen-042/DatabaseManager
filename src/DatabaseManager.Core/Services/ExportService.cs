@@ -7,7 +7,7 @@ namespace DatabaseManager.Core.Services;
 
 public sealed class ExportService : IExportService
 {
-    public async Task ExportToCsvAsync(DataTable dataTable, string filePath, CancellationToken cancellationToken)
+    public async Task ExportToCsvAsync(DataTable dataTable, string filePath, bool fullOutput, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
         await using var writer = new StreamWriter(stream);
@@ -26,7 +26,7 @@ public sealed class ExportService : IExportService
 
             foreach (DataColumn column in dataTable.Columns)
             {
-                csv.WriteField(row[column]);
+                csv.WriteField(DisplayValueFormatter.FormatForDisplay(row[column], fullOutput));
             }
 
             await csv.NextRecordAsync();
@@ -35,7 +35,7 @@ public sealed class ExportService : IExportService
         await writer.FlushAsync(cancellationToken);
     }
 
-    public Task ExportToExcelAsync(DataTable dataTable, string filePath, CancellationToken cancellationToken)
+    public Task ExportToExcelAsync(DataTable dataTable, string filePath, bool fullOutput, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -54,7 +54,7 @@ public sealed class ExportService : IExportService
 
             for (var columnIndex = 0; columnIndex < dataTable.Columns.Count; columnIndex++)
             {
-                worksheet.Cell(rowIndex + 2, columnIndex + 1).Value = dataTable.Rows[rowIndex][columnIndex]?.ToString();
+                worksheet.Cell(rowIndex + 2, columnIndex + 1).Value = DisplayValueFormatter.FormatForDisplay(dataTable.Rows[rowIndex][columnIndex], fullOutput);
             }
         }
 

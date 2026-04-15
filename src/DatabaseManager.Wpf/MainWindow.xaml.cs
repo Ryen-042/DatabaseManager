@@ -22,10 +22,11 @@ public partial class MainWindow : Window
 {
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
-    private const int OutputSqlEditorTabIndex = 0;
-    private const int OutputSchemaTabIndex = 1;
-    private const int OutputResultsTabIndex = 2;
-    private const int OutputEditRowsTabIndex = 3;
+    private const int ClipboardCannotOpenHResult = unchecked((int)0x800401D0);
+    private const int OutputEditRowsTabIndex = 0;
+    private const int OutputSqlEditorTabIndex = 1;
+    private const int OutputSchemaTabIndex = 2;
+    private const int OutputResultsTabIndex = 3;
     private const int OutputProcedureRunnerTabIndex = 4;
 
     private readonly IDatabaseQueryService _databaseQueryService = new SqlServerQueryService();
@@ -35,8 +36,10 @@ public partial class MainWindow : Window
     private readonly IDatabaseSchemaService _databaseSchemaService = new SqlServerSchemaService();
     private readonly IQueryAssistantService _queryAssistantService = new SqlQueryAssistantService();
     private readonly IStoredProcedureExecutionService _storedProcedureExecutionService = new StoredProcedureExecutionService();
+    private static readonly IValueConverter ResultsValueConverter = new ResultValueConverter();
 
     private DataTable? _currentDataTable;
+    private bool _currentFullOutputMode;
     private CancellationTokenSource? _executionCancellationTokenSource;
     private List<TableSchemaInfo> _tables = new();
     private List<StoredProcedureSchemaInfo> _storedProcedures = new();
@@ -74,11 +77,15 @@ public partial class MainWindow : Window
         ApplyTitleBarTheme(DarkModeCheckBox.IsChecked == true);
         await LoadTemplatesAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
-        OutputTabControl.SelectedIndex = OutputResultsTabIndex;
+        OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
         UpdateSchemaDetailsPanelByAssistantTab();
         ApplyEditModeState();
         UpdateEditQueryTextFromInputs();
-        SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
+        await ConnectToDatabaseAsync(triggeredOnStartup: true);
+        if (_tables.Count == 0 && _storedProcedures.Count == 0)
+        {
+            SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
+        }
     }
 
     private void SchemaAssistantTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -91,7 +98,7 @@ public partial class MainWindow : Window
         UpdateSchemaDetailsPanelByAssistantTab();
     }
 
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    private async void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Keyboard.Modifiers != ModifierKeys.Control)
         {
@@ -100,7 +107,15 @@ public partial class MainWindow : Window
 
         if (e.Key == Key.E)
         {
-            RunQueryButton_Click(RunQueryButton, new RoutedEventArgs());
+            if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
+            {
+                await RefreshEditRowsAsync();
+            }
+            else
+            {
+                RunQueryButton_Click(RunQueryButton, new RoutedEventArgs());
+            }
+
             e.Handled = true;
             return;
         }
@@ -165,7 +180,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void TestConnectionButton_Click(object sender, RoutedEventArgs e)
+    private async void ConnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ConnectToDatabaseAsync(triggeredOnStartup: false);
+    }
+
+    private async Task ConnectToDatabaseAsync(bool triggeredOnStartup)
     {
         if (!TryGetConnectionString(out var connectionString))
         {
@@ -173,7 +193,7 @@ public partial class MainWindow : Window
         }
 
         SetExecutionState(true);
-        SetStatus("Testing database connection...");
+        SetStatus(triggeredOnStartup ? "Connecting to database..." : "Connecting to database...");
 
         using var cts = new CancellationTokenSource();
         var result = await _databaseQueryService.ExecuteAsync(
@@ -184,12 +204,12 @@ public partial class MainWindow : Window
 
         if (result.IsSuccess)
         {
-            SetStatus("Connection test succeeded.");
+            SetStatus("Connected successfully.");
             await LoadSchemaMetadataAsync(connectionString);
         }
         else
         {
-            SetStatus($"Connection test failed: {result.ErrorMessage}");
+            SetStatus($"Connection failed: {result.ErrorMessage}");
         }
 
         SetExecutionState(false);
@@ -210,17 +230,46 @@ public partial class MainWindow : Window
             return;
         }
 
+        var outputMode = QueryOutputModeParser.Parse(sql);
+        var sqlToExecute = outputMode.Sql;
+        if (string.IsNullOrWhiteSpace(sqlToExecute))
+        {
+            SetStatus("SQL query is required.");
+            return;
+        }
+
+        var fullOutputEnabled = outputMode.HasFullDirective || FullOutputCheckBox.IsChecked == true;
+        _currentFullOutputMode = fullOutputEnabled;
+
+        var parameterNames = QueryOutputModeParser.ExtractParameterNames(sqlToExecute);
+        IReadOnlyList<QueryParameterValue> queryParameters = Array.Empty<QueryParameterValue>();
+        if (parameterNames.Count > 0)
+        {
+            if (!TryPromptForQueryParameters(parameterNames, out queryParameters))
+            {
+                SetStatus("Query execution canceled.");
+                return;
+            }
+        }
+
         _executionCancellationTokenSource?.Dispose();
         _executionCancellationTokenSource = new CancellationTokenSource();
 
         SetExecutionState(true);
-        SetStatus("Executing query...");
+        SetStatus(fullOutputEnabled ? "Executing query (full output mode)..." : "Executing query...");
 
-        var result = await _databaseQueryService.ExecuteAsync(
-            connectionString,
-            sql,
-            ParseTimeoutSeconds(),
-            _executionCancellationTokenSource.Token);
+        var result = queryParameters.Count == 0
+            ? await _databaseQueryService.ExecuteAsync(
+                connectionString,
+                sqlToExecute,
+                ParseTimeoutSeconds(),
+                _executionCancellationTokenSource.Token)
+            : await _databaseQueryService.ExecuteAsync(
+                connectionString,
+                sqlToExecute,
+                queryParameters,
+                ParseTimeoutSeconds(),
+                _executionCancellationTokenSource.Token);
 
         DisplayExecutionResult("Query", result);
         SetExecutionState(false);
@@ -320,7 +369,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _exportService.ExportToCsvAsync(_currentDataTable!, dialog.FileName, CancellationToken.None);
+        await _exportService.ExportToCsvAsync(_currentDataTable!, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
         SetStatus($"CSV export complete: {dialog.FileName}");
     }
 
@@ -336,55 +385,64 @@ public partial class MainWindow : Window
 
     private async void SaveRowChangesButton_Click(object sender, RoutedEventArgs e)
     {
+        await SaveRowChangesAsync();
+    }
+
+    private async Task<bool> SaveRowChangesAsync()
+    {
         if (!_isEditMode || _editableResultsTable is null)
         {
-            return;
+            return true;
         }
 
         if (!TryGetConnectionString(out var connectionString))
         {
-            return;
+            return false;
         }
 
         if (_selectedTable is null)
         {
             SetStatus("Select a table before saving row edits.");
-            return;
+            return false;
         }
 
         if (_selectedColumns.All(c => !c.IsPrimaryKey))
         {
             SetStatus("Cannot save edits because the selected table has no primary key.");
-            return;
+            return false;
         }
 
         var updates = BuildRowUpdates(_editableResultsTable, _selectedColumns);
-        if (updates.Count == 0)
+        var inserts = BuildRowInserts(_editableResultsTable, _selectedColumns);
+        if (updates.Count == 0 && inserts.Count == 0)
         {
             SetStatus("No row changes detected.");
-            return;
+            return true;
         }
 
         SetExecutionState(true);
-        SetStatus($"Saving {updates.Count} row change(s)...");
+        SetStatus($"Saving {updates.Count + inserts.Count} row change(s)...");
 
         try
         {
-            var affectedRows = await _rowEditService.SaveUpdatedRowsAsync(
+            var affectedRows = await _rowEditService.SaveRowChangesAsync(
                 connectionString,
                 _selectedTable.SchemaName,
                 _selectedTable.TableName,
                 _selectedColumns,
                 updates,
+                inserts,
                 ParseTimeoutSeconds(),
                 CancellationToken.None);
 
             _editableResultsTable.AcceptChanges();
             SetStatus($"Saved changes successfully ({affectedRows} row(s) affected).");
+            return true;
         }
         catch (Exception ex)
         {
             SetStatus($"Failed to save row changes: {ex.Message}");
+            return false;
         }
         finally
         {
@@ -516,7 +574,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _exportService.ExportToExcelAsync(_currentDataTable!, dialog.FileName, CancellationToken.None);
+        await _exportService.ExportToExcelAsync(_currentDataTable!, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
         SetStatus($"Excel export complete: {dialog.FileName}");
     }
 
@@ -570,7 +628,7 @@ public partial class MainWindow : Window
             SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
             UpdateSchemaDetailsPanelByAssistantTab();
             UpdateEditQueryTextFromInputs();
-            OutputTabControl.SelectedIndex = OutputSchemaTabIndex;
+            OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
         }
         catch (Exception ex)
         {
@@ -755,8 +813,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        _currentFullOutputMode = FullOutputCheckBox.IsChecked == true;
+
         SetExecutionState(true);
-        SetStatus("Executing stored procedure...");
+        SetStatus(_currentFullOutputMode ? "Executing stored procedure (full output mode)..." : "Executing stored procedure...");
 
         var parameters = _runnerParameterRows
             .Select(x => new StoredProcedureExecutionParameter
@@ -942,7 +1002,7 @@ public partial class MainWindow : Window
     private void SetExecutionState(bool isExecuting)
     {
         RunQueryButton.IsEnabled = !isExecuting;
-        TestConnectionButton.IsEnabled = !isExecuting;
+        ConnectButton.IsEnabled = !isExecuting;
         CancelButton.IsEnabled = isExecuting;
         SaveRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
         DiscardRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
@@ -967,14 +1027,20 @@ public partial class MainWindow : Window
             return;
         }
 
-        var copiedText = TryGetClickedCellText(clickedCell);
+        var copiedText = TryGetClickedCellTextForCopy(clickedCell);
         if (string.IsNullOrWhiteSpace(copiedText))
         {
             return;
         }
 
-        Clipboard.SetText(copiedText);
-        SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+        if (TrySetClipboardText(copiedText))
+        {
+            SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+        }
+        else
+        {
+            SetStatus("Could not access the clipboard. Please try again.");
+        }
     }
 
     private void DataGrid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
@@ -1018,8 +1084,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        Clipboard.SetText(copiedText);
-        SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+        if (TrySetClipboardText(copiedText))
+        {
+            SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+        }
+        else
+        {
+            SetStatus("Could not access the clipboard. Please try again.");
+        }
     }
 
     private void CopySelectedObjectNameMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1038,8 +1110,39 @@ public partial class MainWindow : Window
             return;
         }
 
-        Clipboard.SetText(selectedName);
-        SetStatus($"Copied value to clipboard: {selectedName}");
+        if (TrySetClipboardText(selectedName))
+        {
+            SetStatus($"Copied value to clipboard: {selectedName}");
+        }
+        else
+        {
+            SetStatus("Could not access the clipboard. Please try again.");
+        }
+    }
+
+    private static bool TrySetClipboardText(string text)
+    {
+        const int maxAttempts = 5;
+        const int retryDelayMs = 35;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                return true;
+            }
+            catch (COMException ex) when (ex.HResult == ClipboardCannotOpenHResult && attempt < maxAttempts)
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch (COMException ex) when (ex.HResult == ClipboardCannotOpenHResult)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static string? TryGetClickedCellText(DataGridCell cell)
@@ -1076,7 +1179,7 @@ public partial class MainWindow : Window
         if (item is DataRowView rowView && rowView.Row.Table.Columns.Contains(propertyPath))
         {
             var value = rowView[propertyPath];
-            return value is null or DBNull ? string.Empty : value.ToString();
+            return DisplayValueFormatter.FormatForDisplay(value);
         }
 
         var property = item.GetType().GetProperty(propertyPath);
@@ -1086,7 +1189,80 @@ public partial class MainWindow : Window
         }
 
         var propertyValue = property.GetValue(item);
-        return propertyValue?.ToString();
+        return DisplayValueFormatter.FormatForDisplay(propertyValue);
+    }
+
+    private string? TryGetClickedCellTextForCopy(DataGridCell cell)
+    {
+        var item = cell.DataContext;
+        var column = cell.Column;
+
+        if (item is not null && column is DataGridBoundColumn boundColumn && boundColumn.Binding is Binding binding)
+        {
+            var propertyPath = binding.Path?.Path;
+            if (!string.IsNullOrWhiteSpace(propertyPath))
+            {
+                if (item is DataRowView rowView && rowView.Row.Table.Columns.Contains(propertyPath))
+                {
+                    var value = rowView[propertyPath];
+                    return DisplayValueFormatter.FormatForDisplay(value, _currentFullOutputMode);
+                }
+
+                var property = item.GetType().GetProperty(propertyPath);
+                if (property is not null)
+                {
+                    var propertyValue = property.GetValue(item);
+                    return DisplayValueFormatter.FormatForDisplay(propertyValue, _currentFullOutputMode);
+                }
+            }
+        }
+
+        if (cell.Content is TextBlock textBlock)
+        {
+            return textBlock.Text;
+        }
+
+        if (cell.Content is CheckBox checkBox)
+        {
+            return checkBox.IsChecked?.ToString();
+        }
+
+        if (cell.Content is TextBox textBox)
+        {
+            return textBox.Text;
+        }
+
+        return null;
+    }
+
+    private void ResultsDataGrid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
+    {
+        DataGrid_AutoGeneratingColumn(sender, e);
+
+        if (sender == EditRowsDataGrid)
+        {
+            var schemaColumn = _selectedColumns.FirstOrDefault(c =>
+                c.ColumnName.Equals(e.PropertyName, StringComparison.OrdinalIgnoreCase));
+
+            if (schemaColumn is not null && (schemaColumn.IsIdentity
+                || schemaColumn.DataType.Equals("rowversion", StringComparison.OrdinalIgnoreCase)
+                || schemaColumn.DataType.Equals("timestamp", StringComparison.OrdinalIgnoreCase)))
+            {
+                e.Column.IsReadOnly = true;
+            }
+        }
+
+        if (e.Column is not DataGridTextColumn textColumn)
+        {
+            return;
+        }
+
+        if (textColumn.Binding is not Binding binding)
+        {
+            return;
+        }
+
+        binding.Converter = ResultsValueConverter;
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
@@ -1115,6 +1291,19 @@ public partial class MainWindow : Window
         return value[..maxLength] + "...";
     }
 
+    private sealed class ResultValueConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            return DisplayValueFormatter.FormatForDisplay(value);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            return value;
+        }
+    }
+
     private void UpdateSchemaDetailsPanelByAssistantTab()
     {
         var selectedIndex = SchemaAssistantTabControl.SelectedIndex;
@@ -1128,6 +1317,61 @@ public partial class MainWindow : Window
         {
             SchemaSummaryTextBlock.Text = "Open Tables or Stored Procedures tab to display schema details.";
         }
+    }
+
+    private async Task RefreshEditRowsAsync()
+    {
+        if (!_isEditMode)
+        {
+            await LoadEditableRowsAsync();
+            return;
+        }
+
+        if (!HasPendingEditRowsChanges())
+        {
+            await LoadEditableRowsAsync();
+            return;
+        }
+
+        var decision = MessageBox.Show(
+            "You have unsaved edits in Edit Rows.\n\nYes = Save and refresh\nNo = Discard and refresh\nCancel = Keep editing",
+            "Unsaved Edit Rows Changes",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning);
+
+        if (decision == MessageBoxResult.Cancel)
+        {
+            SetStatus("Refresh canceled. Unsaved edits were kept.");
+            return;
+        }
+
+        if (decision == MessageBoxResult.Yes)
+        {
+            var saveSucceeded = await SaveRowChangesAsync();
+            if (!saveSucceeded)
+            {
+                return;
+            }
+        }
+        else
+        {
+            _editableResultsTable?.RejectChanges();
+            SetStatus("Discarded unsaved row changes.");
+        }
+
+        await LoadEditableRowsAsync();
+    }
+
+    private bool HasPendingEditRowsChanges()
+    {
+        if (_editableResultsTable is null)
+        {
+            return false;
+        }
+
+        return _editableResultsTable.Rows
+            .Cast<DataRow>()
+            .Any(row => row.RowState is DataRowState.Added or DataRowState.Modified or DataRowState.Deleted);
     }
 
     private async Task LoadEditableRowsAsync()
@@ -1149,6 +1393,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        var editQueryMode = QueryOutputModeParser.Parse(EditQueryTextBox.Text ?? string.Empty);
+        _currentFullOutputMode = editQueryMode.HasFullDirective || FullOutputCheckBox.IsChecked == true;
+
         SyncInputsFromEditQueryText();
 
         var topRows = ParseEditTopRowsInput();
@@ -1167,7 +1414,9 @@ public partial class MainWindow : Window
         }
 
         SetExecutionState(true);
-        SetStatus($"Loading editable rows from {_selectedTable.FullName}...");
+        SetStatus(_currentFullOutputMode
+            ? $"Loading editable rows from {_selectedTable.FullName} (full output mode)..."
+            : $"Loading editable rows from {_selectedTable.FullName}...");
 
         try
         {
@@ -1203,7 +1452,7 @@ public partial class MainWindow : Window
     private void ApplyEditModeState()
     {
         EditRowsDataGrid.IsReadOnly = !_isEditMode;
-        EditRowsDataGrid.CanUserAddRows = false;
+        EditRowsDataGrid.CanUserAddRows = _isEditMode;
         EditRowsDataGrid.CanUserDeleteRows = false;
 
         EnterEditModeButton.Content = _isEditMode ? "Reload Edit Rows" : "Edit Top Rows";
@@ -1410,6 +1659,58 @@ public partial class MainWindow : Window
         return updates;
     }
 
+    private static IReadOnlyList<RowInsertRequest> BuildRowInserts(DataTable table, IReadOnlyList<ColumnSchemaInfo> columns)
+    {
+        var insertableColumns = columns
+            .Where(IsInsertableColumn)
+            .Select(c => c.ColumnName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var inserts = new List<RowInsertRequest>();
+        foreach (DataRow row in table.Rows)
+        {
+            if (row.RowState != DataRowState.Added)
+            {
+                continue;
+            }
+
+            var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataColumn column in table.Columns)
+            {
+                if (!insertableColumns.Contains(column.ColumnName))
+                {
+                    continue;
+                }
+
+                var value = row[column, DataRowVersion.Current];
+                values[column.ColumnName] = value == DBNull.Value ? null : value;
+            }
+
+            if (values.Count == 0)
+            {
+                continue;
+            }
+
+            inserts.Add(new RowInsertRequest
+            {
+                Values = values
+            });
+        }
+
+        return inserts;
+    }
+
+    private static bool IsInsertableColumn(ColumnSchemaInfo column)
+    {
+        if (column.IsIdentity)
+        {
+            return false;
+        }
+
+        return !column.DataType.Equals("rowversion", StringComparison.OrdinalIgnoreCase)
+            && !column.DataType.Equals("timestamp", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static IReadOnlyDictionary<string, object?> BuildPrimaryKeyValues(DataRow row, IReadOnlyList<ColumnSchemaInfo> columns)
     {
         var keyValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -1436,6 +1737,124 @@ public partial class MainWindow : Window
         return keyValues;
     }
 
+    private bool TryPromptForQueryParameters(
+        IReadOnlyList<string> parameterNames,
+        out IReadOnlyList<QueryParameterValue> parameters)
+    {
+        var rows = new ObservableCollection<QueryParameterEditorRow>(
+            parameterNames.Select(name => new QueryParameterEditorRow
+            {
+                ParameterName = name,
+                Value = string.Empty,
+                SendAsNull = false
+            }));
+
+        var dialog = new Window
+        {
+            Title = "Query Parameters",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Width = 620,
+            Height = 420,
+            MinWidth = 560,
+            MinHeight = 340,
+            ResizeMode = ResizeMode.CanResize,
+            ShowInTaskbar = false,
+            Background = (Brush)FindResource("SurfaceBrush"),
+            Foreground = (Brush)FindResource("TextPrimaryBrush")
+        };
+
+        var root = new Grid
+        {
+            Margin = new Thickness(14)
+        };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var instructions = new TextBlock
+        {
+            Text = "Enter values for SQL variables before execution.",
+            Margin = new Thickness(0, 0, 0, 8),
+            FontWeight = FontWeights.SemiBold
+        };
+        Grid.SetRow(instructions, 0);
+        root.Children.Add(instructions);
+
+        var dataGrid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            HeadersVisibility = DataGridHeadersVisibility.All,
+            ItemsSource = rows
+        };
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Variable",
+            Binding = new Binding(nameof(QueryParameterEditorRow.ParameterName)),
+            IsReadOnly = true,
+            Width = new DataGridLength(180)
+        });
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Value",
+            Binding = new Binding(nameof(QueryParameterEditorRow.Value)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+        });
+        dataGrid.Columns.Add(new DataGridCheckBoxColumn
+        {
+            Header = "NULL",
+            Binding = new Binding(nameof(QueryParameterEditorRow.SendAsNull)),
+            Width = new DataGridLength(80)
+        });
+        Grid.SetRow(dataGrid, 1);
+        root.Children.Add(dataGrid);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 90,
+            Margin = new Thickness(0, 0, 8, 0),
+            IsCancel = true
+        };
+        var executeButton = new Button
+        {
+            Content = "Execute",
+            MinWidth = 90,
+            IsDefault = true
+        };
+        executeButton.Click += (_, _) => dialog.DialogResult = true;
+        buttons.Children.Add(cancelButton);
+        buttons.Children.Add(executeButton);
+        Grid.SetRow(buttons, 2);
+        root.Children.Add(buttons);
+
+        dialog.Content = root;
+
+        if (dialog.ShowDialog() != true)
+        {
+            parameters = Array.Empty<QueryParameterValue>();
+            return false;
+        }
+
+        parameters = rows
+            .Select(row => new QueryParameterValue
+            {
+                Name = row.ParameterName,
+                Value = row.SendAsNull ? null : row.Value
+            })
+            .ToList();
+
+        return true;
+    }
+
     private sealed class ProcedureParameterEditorRow
     {
         public required string ParameterName { get; init; }
@@ -1447,5 +1866,14 @@ public partial class MainWindow : Window
         public bool SendAsNull { get; set; }
 
         public bool IsOutput { get; init; }
+    }
+
+    private sealed class QueryParameterEditorRow
+    {
+        public required string ParameterName { get; init; }
+
+        public string? Value { get; set; }
+
+        public bool SendAsNull { get; set; }
     }
 }
