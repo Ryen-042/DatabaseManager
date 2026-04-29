@@ -140,7 +140,7 @@
                     <Setter.Value>
                         <ControlTemplate TargetType="ScrollBar">
                             <Border Background="{TemplateBinding Background}" CornerRadius="5">
-                                <primitives:Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <primitives:Track x:Name="PART_Track">
                                     <primitives:Track.DecreaseRepeatButton>
                                         <RepeatButton Style="{StaticResource ScrollBarPageButtonStyle}" />
                                     </primitives:Track.DecreaseRepeatButton>
@@ -154,10 +154,12 @@
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
                                     <Setter Property="Height" Value="11" />
                                     <Setter Property="Width" Value="Auto" />
                                 </Trigger>
                                 <Trigger Property="Orientation" Value="Vertical">
+                                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="True" />
                                     <Setter Property="Width" Value="11" />
                                     <Setter Property="Height" Value="Auto" />
                                 </Trigger>
@@ -388,6 +390,7 @@
                 <Setter Property="AlternatingRowBackground" Value="{DynamicResource MutedBrush}" />
                 <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderBrush}" />
                 <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="FlowDirection" Value="LeftToRight" />
             </Style>
 
             <Style TargetType="DataGridRowHeader">

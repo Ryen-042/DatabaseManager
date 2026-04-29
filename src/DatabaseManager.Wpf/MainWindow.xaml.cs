@@ -16,6 +16,8 @@ using DatabaseManager.Core.Models;
 using DatabaseManager.Core.Models.Schema;
 using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
+using DatabaseManager.Wpf.Editors;
+using DatabaseManager.Wpf.SqlSuggestions;
 using Microsoft.Win32;
 
 namespace DatabaseManager.Wpf;
@@ -30,6 +32,7 @@ public partial class MainWindow : Window
     private const int OutputSchemaTabIndex = 2;
     private const int OutputResultsTabIndex = 3;
     private const int OutputProcedureRunnerTabIndex = 4;
+    private const int MaxRecentSqlFragments = 20;
 
     private readonly IDatabaseQueryService _databaseQueryService = new SqlServerQueryService();
     private readonly IRowEditService _rowEditService = new RowEditService();
@@ -45,6 +48,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _executionCancellationTokenSource;
     private List<TableSchemaInfo> _tables = new();
     private List<StoredProcedureSchemaInfo> _storedProcedures = new();
+    private List<ForeignKeySchemaInfo> _foreignKeys = new();
     private List<ColumnSchemaInfo> _selectedColumns = new();
     private List<StoredProcedureParameterInfo> _selectedProcedureParameters = new();
     private TableSchemaInfo? _selectedTable;
@@ -54,13 +58,30 @@ public partial class MainWindow : Window
     private DataTable? _editableResultsTable;
     private bool _isEditMode;
     private bool _isSyncingEditQuery;
+    private bool _isEditRowsCustomQueryMode;
+    private int _lastEditRowsCurrentRowIndex = -1;
+    private readonly ISqlSuggestionEngine _sqlSuggestionEngine = new SqlSuggestionEngine();
+    private readonly ISqlCompletionCatalogService _sqlCompletionCatalogService = new SqlCompletionCatalogService();
+    private ISqlTextEditor? _sqlEditor;
+    private ISqlTextEditor? _editRowsSqlEditor;
+    private CancellationTokenSource? _sqlSuggestionDebounceCts;
+    private ISqlTextEditor? _activeSqlSuggestionTextEditor;
+    private int _activeSqlSuggestionTokenStart;
+    private int _activeSqlSuggestionTokenLength;
+    private readonly LinkedList<string> _recentSqlFragments = new();
+    private readonly HashSet<string> _recentSqlFragmentLookup = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly Regex EditRowsQueryRegex = new(
-        @"^\s*SELECT\s+TOP\s*\(\s*(?<top>\d+)\s*\)\s+\*\s+FROM\s+(?<from>\[[^\]]+\]\.\[[^\]]+\]|\S+)(?:\s+WHERE\s+(?<where>.*?))?(?:\s+ORDER\s+BY\s+(?<order>.*?))?\s*;?\s*$",
+        @"^\s*SELECT\s+(?:TOP\s*\(\s*(?<top>\d+)\s*\)\s+)?\*\s+FROM\s+(?<from>\[[^\]]+\]\.\[[^\]]+\]|\S+)(?:\s+WHERE\s+(?<where>.*?))?(?:\s+ORDER\s+BY\s+(?<order>.*?))?\s*;?\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     public MainWindow()
     {
         InitializeComponent();
+        _sqlEditor = new AvalonEditSqlTextEditorAdapter(QueryTextBox);
+        _editRowsSqlEditor = new AvalonEditSqlTextEditorAdapter(EditQueryTextBox);
+        SqlEditorSupport.Configure(QueryTextBox);
+        SqlEditorSupport.Configure(EditQueryTextBox);
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
     }
@@ -192,13 +213,18 @@ public partial class MainWindow : Window
 
     private async Task ConnectToDatabaseAsync(bool triggeredOnStartup)
     {
-        if (!TryGetConnectionString(out var connectionString))
+        if (!TryGetConnectionString(out var connectionString, showMissingStatus: !triggeredOnStartup))
         {
+            if (triggeredOnStartup)
+            {
+                SetStatus("Startup auto-connect skipped: connection string is empty.");
+            }
+
             return;
         }
 
         SetExecutionState(true);
-        SetStatus(triggeredOnStartup ? "Connecting to database..." : "Connecting to database...");
+        SetStatus(triggeredOnStartup ? "Attempting startup database connection..." : "Connecting to database...");
 
         using var cts = new CancellationTokenSource();
         var result = await _databaseQueryService.ExecuteAsync(
@@ -245,6 +271,7 @@ public partial class MainWindow : Window
 
         var fullOutputEnabled = outputMode.HasFullDirective || FullOutputCheckBox.IsChecked == true;
         _currentFullOutputMode = fullOutputEnabled;
+        TrackRecentSqlFragments(sqlToExecute);
 
         var parameterNames = QueryOutputModeParser.ExtractParameterNames(sqlToExecute);
         IReadOnlyList<QueryParameterValue> queryParameters = Array.Empty<QueryParameterValue>();
@@ -352,6 +379,7 @@ public partial class MainWindow : Window
 
         TemplateNameTextBox.Text = selected.Name;
         QueryTextBox.Text = selected.Sql;
+        TrackRecentSqlFragments(selected.Sql);
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus($"Template '{selected.Name}' loaded into editor.");
     }
@@ -433,9 +461,42 @@ public partial class MainWindow : Window
         ApplyEditRowsCornerButtonStyle();
     }
 
+    private void DataGrid_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is DataGrid dataGrid)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                ResetDataGridHorizontalScroll(dataGrid);
+            }));
+        }
+    }
+
+    private void ResetDataGridHorizontalScroll(DataGrid dataGrid)
+    {
+        var scrollViewer = FindDescendant<ScrollViewer>(dataGrid);
+        if (scrollViewer != null)
+        {
+            scrollViewer.ScrollToHorizontalOffset(0);
+        }
+    }
+
     private void EditRowsDataGrid_CurrentCellChanged(object? sender, EventArgs e)
     {
-        RefreshEditRowsVisualStates();
+        if (EditRowsDataGrid.Items.Count == 0)
+        {
+            _lastEditRowsCurrentRowIndex = -1;
+            return;
+        }
+
+        var currentIndex = EditRowsDataGrid.CurrentItem is null
+            ? -1
+            : EditRowsDataGrid.Items.IndexOf(EditRowsDataGrid.CurrentItem);
+
+        ApplyEditRowsVisualStateAtIndex(_lastEditRowsCurrentRowIndex);
+        ApplyEditRowsVisualStateAtIndex(currentIndex);
+
+        _lastEditRowsCurrentRowIndex = currentIndex;
     }
 
     private void EditRowsDataGrid_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
@@ -530,6 +591,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        var cell = FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject);
+        if (cell is not null)
+        {
+            var rowItem = cell.DataContext;
+            if (rowItem is not null)
+            {
+                dataGrid.CurrentCell = new DataGridCellInfo(rowItem, cell.Column);
+                dataGrid.SelectedItem = rowItem;
+                cell.Focus();
+                return;
+            }
+        }
+
         var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
         if (row is null)
         {
@@ -538,6 +612,32 @@ public partial class MainWindow : Window
 
         row.IsSelected = true;
         dataGrid.SelectedItem = row.Item;
+    }
+
+    private async void CopyDataGridCellValueMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem
+            || menuItem.Parent is not ContextMenu contextMenu
+            || contextMenu.PlacementTarget is not DataGrid dataGrid)
+        {
+            return;
+        }
+
+        if (!TryGetCurrentDataGridCellTextForCopy(dataGrid, out var copiedText)
+            || string.IsNullOrWhiteSpace(copiedText))
+        {
+            SetStatus("Select a cell value to copy.");
+            return;
+        }
+
+        if (await TrySetClipboardTextAsync(copiedText))
+        {
+            SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
+        }
+        else
+        {
+            SetStatus("Could not access the clipboard. Please try again.");
+        }
     }
 
     private async void DeleteRowMenuItem_Click(object sender, RoutedEventArgs e)
@@ -558,23 +658,36 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_selectedColumns.All(c => !c.IsPrimaryKey))
-        {
-            SetStatus("Cannot delete rows because the selected table has no primary key.");
-            return;
-        }
-
-        if (EditRowsDataGrid.SelectedItem is not DataRowView selectedRowView)
+        var selectedRowViews = GetSelectedEditRowsSelection();
+        if (selectedRowViews.Count == 0)
         {
             SetStatus("Select a row to delete.");
             return;
         }
 
-        var keyValues = BuildPrimaryKeyValues(selectedRowView.Row, _selectedColumns);
-        var keyDetails = string.Join(", ", keyValues.Select(x => $"{x.Key}={x.Value}"));
+        if (_selectedColumns.All(c => !c.IsPrimaryKey))
+        {
+            await DeleteRowsWithoutPrimaryKeyAsync(connectionString, selectedRowViews);
+            return;
+        }
+
+        await DeleteRowsWithPrimaryKeyAsync(connectionString, selectedRowViews);
+    }
+
+    private async Task DeleteRowsWithPrimaryKeyAsync(string connectionString, IReadOnlyList<DataRowView> selectedRowViews)
+    {
+        if (_selectedTable is null || _editableResultsTable is null)
+        {
+            return;
+        }
+
+        var firstKeyValues = BuildPrimaryKeyValues(selectedRowViews[0].Row, _selectedColumns);
+        var keyDetails = string.Join(", ", firstKeyValues.Select(x => $"{x.Key}={x.Value}"));
 
         var confirmation = MessageBox.Show(
-            $"Delete this row from {_selectedTable.FullName}?{Environment.NewLine}{Environment.NewLine}{keyDetails}",
+            selectedRowViews.Count == 1
+                ? $"Delete this row from {_selectedTable.FullName}?{Environment.NewLine}{Environment.NewLine}{keyDetails}"
+                : $"Delete {selectedRowViews.Count} selected rows from {_selectedTable.FullName}?",
             "Delete Row",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -585,28 +698,37 @@ public partial class MainWindow : Window
         }
 
         SetExecutionState(true);
-        SetStatus("Deleting selected row...");
+        SetStatus("Deleting selected row(s)...");
 
         try
         {
-            var affectedRows = await _rowEditService.DeleteRowAsync(
-                connectionString,
-                _selectedTable.SchemaName,
-                _selectedTable.TableName,
-                _selectedColumns,
-                keyValues,
-                ParseTimeoutSeconds(),
-                CancellationToken.None);
+            var removedRows = new List<DataRow>();
 
-            if (affectedRows == 0)
+            foreach (var rowView in selectedRowViews)
             {
-                SetStatus("No row was deleted. It may have already changed or been removed.");
-                return;
+                var keyValues = BuildPrimaryKeyValues(rowView.Row, _selectedColumns);
+                var affectedRows = await _rowEditService.DeleteRowAsync(
+                    connectionString,
+                    _selectedTable.SchemaName,
+                    _selectedTable.TableName,
+                    _selectedColumns,
+                    keyValues,
+                    ParseTimeoutSeconds(),
+                    CancellationToken.None);
+
+                if (affectedRows > 0)
+                {
+                    removedRows.Add(rowView.Row);
+                }
             }
 
-            _editableResultsTable.Rows.Remove(selectedRowView.Row);
+            foreach (var row in removedRows)
+            {
+                _editableResultsTable.Rows.Remove(row);
+            }
+
             _editableResultsTable.AcceptChanges();
-            SetStatus("Row deleted successfully.");
+            SetStatus($"Deleted {removedRows.Count} row(s) successfully.");
             RefreshEditRowsVisualStates();
         }
         catch (Exception ex)
@@ -617,6 +739,252 @@ public partial class MainWindow : Window
         {
             SetExecutionState(false);
         }
+    }
+
+    private async Task DeleteRowsWithoutPrimaryKeyAsync(string connectionString, IReadOnlyList<DataRowView> selectedRowViews)
+    {
+        if (_selectedTable is null || _editableResultsTable is null)
+        {
+            return;
+        }
+
+        if (!TryPromptForDeleteColumns(_selectedColumns, out var selectedColumns))
+        {
+            SetStatus("Delete canceled.");
+            return;
+        }
+
+        if (selectedColumns.Count == 0)
+        {
+            SetStatus("Select at least one column to build delete filters.");
+            return;
+        }
+
+        var confirmation = MessageBox.Show(
+            $"Delete {selectedRowViews.Count} selected row(s) from {_selectedTable.FullName} using filters on: {string.Join(", ", selectedColumns)}?",
+            "Delete Rows Without Primary Key",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var rowValues = selectedRowViews
+            .Select(rowView => BuildSelectedColumnValues(rowView.Row, selectedColumns))
+            .ToList();
+
+        SetExecutionState(true);
+        SetStatus("Validating delete impact...");
+
+        try
+        {
+            var result = await _rowEditService.DeleteRowsBySelectedColumnsAsync(
+                connectionString,
+                _selectedTable.SchemaName,
+                _selectedTable.TableName,
+                selectedColumns,
+                rowValues,
+                ParseTimeoutSeconds(),
+                CancellationToken.None);
+
+            if (!result.WasExecuted)
+            {
+                var warning = MessageBox.Show(
+                    $"Delete validation mismatch: intended {result.IntendedRows} row(s), matched {result.MatchedRows}.{Environment.NewLine}{Environment.NewLine}Copy generated DELETE SQL for manual review?",
+                    "Delete Validation Warning",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (warning == MessageBoxResult.Yes)
+                {
+                    if (await TrySetClipboardTextAsync(result.GeneratedDeleteSql))
+                    {
+                        SetStatus("Delete validation mismatch. Generated SQL copied to clipboard.");
+                    }
+                    else
+                    {
+                        SetStatus("Delete validation mismatch and clipboard was unavailable.");
+                    }
+                }
+                else
+                {
+                    SetStatus($"Delete canceled due to mismatch (intended {result.IntendedRows}, matched {result.MatchedRows}).");
+                }
+
+                return;
+            }
+
+            foreach (var rowView in selectedRowViews)
+            {
+                _editableResultsTable.Rows.Remove(rowView.Row);
+            }
+
+            _editableResultsTable.AcceptChanges();
+            SetStatus($"Deleted {result.DeletedRows} row(s) successfully.");
+            RefreshEditRowsVisualStates();
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to delete rows: {ex.Message}");
+        }
+        finally
+        {
+            SetExecutionState(false);
+        }
+    }
+
+    private List<DataRowView> GetSelectedEditRowsSelection()
+    {
+        var rows = EditRowsDataGrid.SelectedItems
+            .OfType<DataRowView>()
+            .Distinct()
+            .ToList();
+
+        if (rows.Count == 0 && EditRowsDataGrid.SelectedItem is DataRowView singleRow)
+        {
+            rows.Add(singleRow);
+        }
+
+        return rows;
+    }
+
+    private static IReadOnlyDictionary<string, object?> BuildSelectedColumnValues(DataRow row, IReadOnlyList<string> selectedColumns)
+    {
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in selectedColumns)
+        {
+            if (!row.Table.Columns.Contains(column))
+            {
+                throw new InvalidOperationException($"Selected row does not contain column '{column}'.");
+            }
+
+            var value = row.RowState == DataRowState.Modified
+                ? row[column, DataRowVersion.Original]
+                : row[column];
+
+            values[column] = value == DBNull.Value ? null : value;
+        }
+
+        return values;
+    }
+
+    private bool TryPromptForDeleteColumns(
+        IReadOnlyList<ColumnSchemaInfo> availableColumns,
+        out IReadOnlyList<string> selectedColumns)
+    {
+        var rows = new ObservableCollection<DeleteColumnSelectionRow>(
+            availableColumns
+                .OrderBy(c => c.OrdinalPosition)
+                .Select(c => new DeleteColumnSelectionRow
+                {
+                    ColumnName = c.ColumnName,
+                    DataType = c.DataType,
+                    IsSelected = c.IsPrimaryKey
+                }));
+
+        var dialog = new Window
+        {
+            Title = "Select Columns For Delete Filter",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Width = 620,
+            Height = 480,
+            MinWidth = 560,
+            MinHeight = 360,
+            ResizeMode = ResizeMode.CanResize,
+            ShowInTaskbar = false,
+            Background = (Brush)FindResource("SurfaceBrush"),
+            Foreground = (Brush)FindResource("TextPrimaryBrush")
+        };
+
+        var root = new Grid { Margin = new Thickness(14) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var instructions = new TextBlock
+        {
+            Text = "Select columns to build WHERE predicates for each selected row.",
+            Margin = new Thickness(0, 0, 0, 8),
+            FontWeight = FontWeights.SemiBold
+        };
+        Grid.SetRow(instructions, 0);
+        root.Children.Add(instructions);
+
+        var dataGrid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            HeadersVisibility = DataGridHeadersVisibility.All,
+            ItemsSource = rows
+        };
+        dataGrid.Columns.Add(new DataGridCheckBoxColumn
+        {
+            Header = "Use",
+            Binding = new Binding(nameof(DeleteColumnSelectionRow.IsSelected)),
+            Width = new DataGridLength(70)
+        });
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Column",
+            Binding = new Binding(nameof(DeleteColumnSelectionRow.ColumnName)),
+            IsReadOnly = true,
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+        });
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Data Type",
+            Binding = new Binding(nameof(DeleteColumnSelectionRow.DataType)),
+            IsReadOnly = true,
+            Width = new DataGridLength(150)
+        });
+        Grid.SetRow(dataGrid, 1);
+        root.Children.Add(dataGrid);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 90,
+            Margin = new Thickness(0, 0, 8, 0),
+            IsCancel = true
+        };
+        var applyButton = new Button
+        {
+            Content = "Apply",
+            MinWidth = 90,
+            IsDefault = true
+        };
+        applyButton.Click += (_, _) => dialog.DialogResult = true;
+
+        buttons.Children.Add(cancelButton);
+        buttons.Children.Add(applyButton);
+        Grid.SetRow(buttons, 2);
+        root.Children.Add(buttons);
+
+        dialog.Content = root;
+
+        if (dialog.ShowDialog() != true)
+        {
+            selectedColumns = Array.Empty<string>();
+            return false;
+        }
+
+        selectedColumns = rows
+            .Where(row => row.IsSelected)
+            .Select(row => row.ColumnName)
+            .ToList();
+
+        return true;
     }
 
     private async void ExportExcelButton_Click(object sender, RoutedEventArgs e)
@@ -687,6 +1055,7 @@ public partial class MainWindow : Window
                 CancellationToken.None);
 
             _selectedColumns = columns.OrderBy(x => x.OrdinalPosition).ToList();
+            _sqlCompletionCatalogService.RefreshTableColumns(_selectedTable, _selectedColumns);
             TableColumnsDataGrid.ItemsSource = _selectedColumns;
             TableSqlDefinitionTextBox.Text = _queryAssistantService.BuildTableSchemaText(_selectedTable, _selectedColumns);
             SelectedTableTextBlock.Text = $"{_selectedTable.FullName} ({_selectedColumns.Count} columns)";
@@ -695,10 +1064,38 @@ public partial class MainWindow : Window
             UpdateEditQueryTextFromInputs();
             ShowSelectedTableColumnsInEditRowsGrid();
             OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
+
+            // Auto-substitute TableName placeholder with selected table name
+            SubstituteTableNamePlaceholder(_selectedTable);
         }
         catch (Exception ex)
         {
             SetStatus($"Failed to load columns: {ex.Message}");
+        }
+    }
+
+    private void SubstituteTableNamePlaceholder(TableSchemaInfo selectedTable)
+    {
+        var editors = new[] { _sqlEditor, _editRowsSqlEditor };
+        foreach (var editor in editors)
+        {
+            if (editor?.Text?.Contains("TableName", StringComparison.Ordinal) != true)
+            {
+                continue;
+            }
+
+            var newText = Regex.Replace(
+                editor.Text,
+                @"\[TableName\]|TableName",
+                $"[{selectedTable.SchemaName}].[{selectedTable.TableName}]",
+                RegexOptions.Compiled);
+
+            if (!string.Equals(editor.Text, newText, StringComparison.Ordinal))
+            {
+                var caretPos = editor.CaretIndex;
+                editor.Text = newText;
+                editor.CaretIndex = Math.Min(caretPos, editor.Text.Length);
+            }
         }
     }
 
@@ -729,6 +1126,7 @@ public partial class MainWindow : Window
                 CancellationToken.None);
 
             _selectedProcedureParameters = parameters.OrderBy(x => x.OrdinalPosition).ToList();
+            _sqlCompletionCatalogService.RefreshProcedureParameters(_selectedStoredProcedure, _selectedProcedureParameters);
             ProcedureParametersDataGrid.ItemsSource = _selectedProcedureParameters;
             var procedureDefinition = await _databaseSchemaService.GetStoredProcedureDefinitionAsync(
                 connectionString,
@@ -829,6 +1227,30 @@ public partial class MainWindow : Window
         SetStatus("Generated table SQL schema text.");
     }
 
+    private void GenerateDropTableScriptButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureTableSelection())
+        {
+            return;
+        }
+
+        QueryTextBox.Text = _queryAssistantService.BuildDropTableScript(_selectedTable!);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        SetStatus("Generated DROP TABLE script in SQL Editor.");
+    }
+
+    private void GenerateDropAndCreateTableScriptButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureTableSelection())
+        {
+            return;
+        }
+
+        QueryTextBox.Text = _queryAssistantService.BuildDropAndCreateTableScript(_selectedTable!, _selectedColumns);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        SetStatus("Generated DROP + CREATE TABLE script in SQL Editor.");
+    }
+
     private void GenerateExecButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureProcedureSelection())
@@ -839,6 +1261,34 @@ public partial class MainWindow : Window
         QueryTextBox.Text = _queryAssistantService.BuildExecuteProcedureQuery(_selectedStoredProcedure!, _selectedProcedureParameters);
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated EXEC query from stored procedure metadata.");
+    }
+
+    private void GenerateDropProcedureScriptButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureProcedureSelection())
+        {
+            return;
+        }
+
+        QueryTextBox.Text = _queryAssistantService.BuildDropProcedureScript(_selectedStoredProcedure!);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        SetStatus("Generated DROP PROCEDURE script in SQL Editor.");
+    }
+
+    private void GenerateAlterProcedureScriptButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureProcedureSelection())
+        {
+            return;
+        }
+
+        var definition = string.IsNullOrWhiteSpace(ProcedureSqlDefinitionTextBox.Text)
+            ? null
+            : ProcedureSqlDefinitionTextBox.Text;
+
+        QueryTextBox.Text = _queryAssistantService.BuildAlterProcedureScript(_selectedStoredProcedure!, definition);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        SetStatus("Generated ALTER PROCEDURE script in SQL Editor.");
     }
 
     private void OpenRunnerButton_Click(object sender, RoutedEventArgs e)
@@ -915,11 +1365,14 @@ public partial class MainWindow : Window
 
             var tablesTask = _databaseSchemaService.GetTablesAsync(connectionString, CancellationToken.None);
             var proceduresTask = _databaseSchemaService.GetStoredProceduresAsync(connectionString, CancellationToken.None);
+            var foreignKeysTask = _databaseSchemaService.GetForeignKeysAsync(connectionString, CancellationToken.None);
 
-            await Task.WhenAll(tablesTask, proceduresTask);
+            await Task.WhenAll(tablesTask, proceduresTask, foreignKeysTask);
 
             _tables = tablesTask.Result.ToList();
             _storedProcedures = proceduresTask.Result.ToList();
+            _foreignKeys = foreignKeysTask.Result.ToList();
+            _sqlCompletionCatalogService.RefreshSchemaMetadata(_tables, _storedProcedures, _foreignKeys);
 
             _selectedTable = null;
             _selectedStoredProcedure = null;
@@ -944,7 +1397,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            SetStatus($"Schema loaded successfully: {_tables.Count} tables, {_storedProcedures.Count} procedures.");
+            SetStatus($"Schema loaded successfully: {_tables.Count} tables, {_storedProcedures.Count} procedures, {_foreignKeys.Count} foreign keys.");
         }
         catch (Exception ex)
         {
@@ -1004,12 +1457,16 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private bool TryGetConnectionString(out string connectionString)
+    private bool TryGetConnectionString(out string connectionString, bool showMissingStatus = true)
     {
         connectionString = ConnectionStringTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            SetStatus("Connection string is required.");
+            if (showMissingStatus)
+            {
+                SetStatus("Connection string is required.");
+            }
+
             return false;
         }
 
@@ -1028,12 +1485,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        _currentDataTable = result.DataTable;
-        ResultsDataGrid.ItemsSource = _currentDataTable?.DefaultView;
+        var resultSets = result.ResultSets?.Count > 0
+            ? result.ResultSets
+            : BuildFallbackResultSets(result);
+
+        _currentDataTable = resultSets.FirstOrDefault(x => x.DataTable is not null)?.DataTable;
+        RenderResultsSections(resultSets);
         OutputTabControl.SelectedIndex = OutputResultsTabIndex;
-        ResultsSummaryTextBlock.Text = _currentDataTable is null
-            ? $"Results ({result.AffectedRows} affected rows)"
-            : $"Results ({_currentDataTable.Rows.Count} rows, {_currentDataTable.Columns.Count} columns)";
+        ResultsSummaryTextBlock.Text = BuildResultsSummaryText(resultSets, result.AffectedRows);
 
         if (result.OutputParameters is { Count: > 0 })
         {
@@ -1043,6 +1502,267 @@ public partial class MainWindow : Window
         }
 
         SetStatus($"{operationName} completed in {result.Duration.TotalSeconds:F2}s.");
+    }
+
+    private IReadOnlyList<QueryResultSet> BuildFallbackResultSets(QueryExecutionResult result)
+    {
+        if (result.DataTable is not null)
+        {
+            return new[]
+            {
+                new QueryResultSet
+                {
+                    Title = "Result Set 1",
+                    DataTable = result.DataTable,
+                    AffectedRows = result.DataTable.Rows.Count
+                }
+            };
+        }
+
+        return new[]
+        {
+            new QueryResultSet
+            {
+                Title = "Statement Summary",
+                DataTable = null,
+                AffectedRows = result.AffectedRows
+            }
+        };
+    }
+
+    private void RenderResultsSections(IReadOnlyList<QueryResultSet> resultSets)
+    {
+        ResultsSectionsPanel.Children.Clear();
+
+        for (var i = 0; i < resultSets.Count; i++)
+        {
+            var resultSet = resultSets[i];
+            var expander = new Expander
+            {
+                Margin = new Thickness(0, 0, 0, 8),
+                IsExpanded = i == 0,
+                Header = resultSet.DataTable is null
+                    ? $"{resultSet.Title} ({resultSet.AffectedRows} affected rows)"
+                    : $"{resultSet.Title} ({resultSet.DataTable.Rows.Count} rows, {resultSet.DataTable.Columns.Count} columns)"
+            };
+
+            if (resultSet.DataTable is null)
+            {
+                expander.Content = new TextBlock
+                {
+                    Margin = new Thickness(8),
+                    Text = $"No tabular rows. Affected rows: {resultSet.AffectedRows}."
+                };
+            }
+            else
+            {
+                var dataGrid = CreateResultDataGrid(resultSet.DataTable);
+                expander.Content = dataGrid;
+            }
+
+            ResultsSectionsPanel.Children.Add(expander);
+        }
+    }
+
+    private DataGrid CreateResultDataGrid(DataTable table)
+    {
+        var dataGrid = new DataGrid
+        {
+            Margin = new Thickness(0, 8, 0, 0),
+            MaxHeight = 400,
+            IsReadOnly = true,
+            AutoGenerateColumns = true,
+            HeadersVisibility = DataGridHeadersVisibility.All,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            ItemsSource = table.DefaultView,
+            Tag = table,
+            FlowDirection = FlowDirection.LeftToRight,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        dataGrid.Loaded += ResultsDataGrid_Loaded;
+        dataGrid.AutoGeneratingColumn += ResultsDataGrid_AutoGeneratingColumn;
+        dataGrid.PreviewMouseRightButtonDown += ResultsDataGrid_PreviewMouseRightButtonDown;
+
+        var contextMenu = new ContextMenu();
+        var copyMenuItem = new MenuItem { Header = "Copy Value" };
+        copyMenuItem.Click += CopyDataGridCellValueMenuItem_Click;
+        contextMenu.Items.Add(copyMenuItem);
+
+        var markCellMenuItem = new MenuItem { Header = "Mark This Cell" };
+        markCellMenuItem.Click += MarkResultCellMenuItem_Click;
+        contextMenu.Items.Add(markCellMenuItem);
+
+        var markRowMenuItem = new MenuItem { Header = "Mark This Row" };
+        markRowMenuItem.Click += MarkResultRowMenuItem_Click;
+        contextMenu.Items.Add(markRowMenuItem);
+
+        contextMenu.Items.Add(new Separator());
+        var exportCsvMenuItem = new MenuItem { Header = "Export This Section as CSV..." };
+        exportCsvMenuItem.Click += ExportResultSectionCsvMenuItem_Click;
+        contextMenu.Items.Add(exportCsvMenuItem);
+
+        var exportExcelMenuItem = new MenuItem { Header = "Export This Section as Excel..." };
+        exportExcelMenuItem.Click += ExportResultSectionExcelMenuItem_Click;
+        contextMenu.Items.Add(exportExcelMenuItem);
+
+        dataGrid.ContextMenu = contextMenu;
+
+        return dataGrid;
+    }
+
+    private void ResultsDataGrid_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DataGrid dataGrid || dataGrid.Items.Count == 0 || dataGrid.Columns.Count == 0)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            if (dataGrid.Items.Count == 0 || dataGrid.Columns.Count == 0)
+            {
+                return;
+            }
+
+            var firstItem = dataGrid.Items[0];
+            dataGrid.SelectedItem = firstItem;
+            dataGrid.CurrentCell = new DataGridCellInfo(firstItem, dataGrid.Columns[0]);
+
+            // Reset scroll position to show leftmost columns without using ScrollIntoView
+            if (FindDescendant<ScrollViewer>(dataGrid) is ScrollViewer scrollViewer)
+            {
+                scrollViewer.ScrollToHorizontalOffset(0);
+                scrollViewer.ScrollToVerticalOffset(0);
+            }
+        }));
+    }
+
+    private static string BuildResultsSummaryText(IReadOnlyList<QueryResultSet> resultSets, int fallbackAffectedRows)
+    {
+        var tableCount = resultSets.Count(x => x.DataTable is not null);
+        if (tableCount == 0)
+        {
+            var affectedRows = resultSets.Sum(x => x.AffectedRows);
+            var displayedAffectedRows = affectedRows == 0 ? fallbackAffectedRows : affectedRows;
+            return $"Results ({displayedAffectedRows} affected rows)";
+        }
+
+        var totalRows = resultSets
+            .Where(x => x.DataTable is not null)
+            .Sum(x => x.DataTable!.Rows.Count);
+
+        return $"Results ({tableCount} sections, {totalRows} total rows)";
+    }
+
+    private async void ExportResultSectionCsvMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetResultSectionDataTableFromMenu(sender, out var table))
+        {
+            SetStatus("No result section selected for export.");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "CSV Files (*.csv)|*.csv",
+            FileName = "query-section.csv"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        await _exportService.ExportToCsvAsync(table, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
+        SetStatus($"Section CSV export complete: {dialog.FileName}");
+    }
+
+    private async void ExportResultSectionExcelMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetResultSectionDataTableFromMenu(sender, out var table))
+        {
+            SetStatus("No result section selected for export.");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Excel Files (*.xlsx)|*.xlsx",
+            FileName = "query-section.xlsx"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        await _exportService.ExportToExcelAsync(table, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
+        SetStatus($"Section Excel export complete: {dialog.FileName}");
+    }
+
+    private void MarkResultCellMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem || e.OriginalSource is not MenuItem menuItem)
+        {
+            return;
+        }
+
+        var contextMenu = menuItem.Parent as ContextMenu;
+        if (contextMenu?.PlacementTarget is not DataGrid dataGrid)
+        {
+            return;
+        }
+
+        var currentCell = dataGrid.CurrentCell;
+        if (currentCell.Item is null || currentCell.Column is null)
+        {
+            SetStatus("Select a cell to mark.");
+            return;
+        }
+
+        SetStatus($"Cell marked: [{currentCell.Column.Header}]");
+    }
+
+    private void MarkResultRowMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem || e.OriginalSource is not MenuItem menuItem)
+        {
+            return;
+        }
+
+        var contextMenu = menuItem.Parent as ContextMenu;
+        if (contextMenu?.PlacementTarget is not DataGrid dataGrid)
+        {
+            return;
+        }
+
+        if (dataGrid.SelectedItem is null)
+        {
+            SetStatus("Select a row to mark.");
+            return;
+        }
+
+        var rowIndex = dataGrid.Items.IndexOf(dataGrid.SelectedItem) + 1;
+        SetStatus($"Row marked: #{rowIndex}");
+    }
+
+    private static bool TryGetResultSectionDataTableFromMenu(object sender, out DataTable table)
+    {
+        table = null!;
+
+        if (sender is not MenuItem menuItem
+            || menuItem.Parent is not ContextMenu contextMenu
+            || contextMenu.PlacementTarget is not DataGrid dataGrid
+            || dataGrid.Tag is not DataTable dataTable)
+        {
+            return false;
+        }
+
+        table = dataTable;
+        return true;
     }
 
     private bool EnsureExportableData()
@@ -1082,33 +1802,10 @@ public partial class MainWindow : Window
         StatusTextBlock.Text = message;
     }
 
-    private void SchemaDataGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private async void SchemaDataGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not DataGrid dataGrid)
-        {
-            return;
-        }
-
-        var clickedCell = FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject);
-        if (clickedCell is null)
-        {
-            return;
-        }
-
-        var copiedText = TryGetClickedCellTextForCopy(clickedCell);
-        if (string.IsNullOrWhiteSpace(copiedText))
-        {
-            return;
-        }
-
-        if (TrySetClipboardText(copiedText))
-        {
-            SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
-        }
-        else
-        {
-            SetStatus("Could not access the clipboard. Please try again.");
-        }
+        // Double-click copy behavior is now completely disabled in all tabs
+        e.Handled = false;
     }
 
     private void DataGrid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
@@ -1122,7 +1819,7 @@ public partial class MainWindow : Window
         e.Column.Header = headerText.Replace("_", "__", StringComparison.Ordinal);
     }
 
-    private void SchemaListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private async void SchemaListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ListBox)
         {
@@ -1152,7 +1849,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (TrySetClipboardText(copiedText))
+        if (await TrySetClipboardTextAsync(copiedText))
         {
             SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
         }
@@ -1162,7 +1859,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CopySelectedObjectNameMenuItem_Click(object sender, RoutedEventArgs e)
+    private async void CopySelectedObjectNameMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var selectedName = TablesListBox.SelectedItem switch
         {
@@ -1178,7 +1875,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (TrySetClipboardText(selectedName))
+        if (await TrySetClipboardTextAsync(selectedName))
         {
             SetStatus($"Copied value to clipboard: {selectedName}");
         }
@@ -1188,7 +1885,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private static bool TrySetClipboardText(string text)
+    private static async Task<bool> TrySetClipboardTextAsync(string text)
     {
         const int maxAttempts = 5;
         const int retryDelayMs = 35;
@@ -1202,7 +1899,7 @@ public partial class MainWindow : Window
             }
             catch (COMException ex) when (ex.HResult == ClipboardCannotOpenHResult && attempt < maxAttempts)
             {
-                Thread.Sleep(retryDelayMs);
+                await Task.Delay(retryDelayMs);
             }
             catch (COMException ex) when (ex.HResult == ClipboardCannotOpenHResult)
             {
@@ -1265,6 +1962,35 @@ public partial class MainWindow : Window
         var item = cell.DataContext;
         var column = cell.Column;
 
+        return TryGetDataGridCellTextForCopy(item, column)
+            ?? TryGetCellContentTextForCopy(cell.Content);
+    }
+
+    private bool TryGetCurrentDataGridCellTextForCopy(DataGrid dataGrid, out string copiedText)
+    {
+        copiedText = string.Empty;
+
+        var currentCell = dataGrid.CurrentCell;
+        var item = currentCell.Item;
+        var column = currentCell.Column;
+
+        var text = TryGetDataGridCellTextForCopy(item, column);
+        if (string.IsNullOrWhiteSpace(text) && dataGrid.SelectedItem is not null && column is not null)
+        {
+            text = TryGetDataGridCellTextForCopy(dataGrid.SelectedItem, column);
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        copiedText = text;
+        return true;
+    }
+
+    private string? TryGetDataGridCellTextForCopy(object? item, DataGridColumn? column)
+    {
         if (item is not null && column is DataGridBoundColumn boundColumn && boundColumn.Binding is Binding binding)
         {
             var propertyPath = binding.Path?.Path;
@@ -1285,17 +2011,22 @@ public partial class MainWindow : Window
             }
         }
 
-        if (cell.Content is TextBlock textBlock)
+        return null;
+    }
+
+    private static string? TryGetCellContentTextForCopy(object? content)
+    {
+        if (content is TextBlock textBlock)
         {
             return textBlock.Text;
         }
 
-        if (cell.Content is CheckBox checkBox)
+        if (content is CheckBox checkBox)
         {
             return checkBox.IsChecked?.ToString();
         }
 
-        if (cell.Content is TextBox textBox)
+        if (content is TextBox textBox)
         {
             return textBox.Text;
         }
@@ -1362,6 +2093,27 @@ public partial class MainWindow : Window
             }
 
             current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject current) where T : DependencyObject
+    {
+        var childrenCount = VisualTreeHelper.GetChildrenCount(current);
+        for (var i = 0; i < childrenCount; i++)
+        {
+            var child = VisualTreeHelper.GetChild(current, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var foundInChild = FindDescendant<T>(child);
+            if (foundInChild is not null)
+            {
+                return foundInChild;
+            }
         }
 
         return null;
@@ -1548,6 +2300,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplyEditRowsVisualStateAtIndex(int index)
+    {
+        if (index < 0 || index >= EditRowsDataGrid.Items.Count)
+        {
+            return;
+        }
+
+        var row = EditRowsDataGrid.ItemContainerGenerator.ContainerFromIndex(index) as DataGridRow;
+        if (row is null)
+        {
+            return;
+        }
+
+        ApplyEditRowsRowVisualState(row);
+    }
+
     private void ApplyEditRowsRowVisualState(DataGridRow row)
     {
         row.Tag = null;
@@ -1600,49 +2368,99 @@ public partial class MainWindow : Window
         var editQueryMode = QueryOutputModeParser.Parse(EditQueryTextBox.Text ?? string.Empty);
         _currentFullOutputMode = editQueryMode.HasFullDirective || FullOutputCheckBox.IsChecked == true;
 
-        SyncInputsFromEditQueryText();
-
-        var topRows = ParseEditTopRowsInput();
-        var filter = string.IsNullOrWhiteSpace(EditFilterTextBox.Text) ? null : EditFilterTextBox.Text.Trim();
-        var orderBy = string.IsNullOrWhiteSpace(EditOrderByTextBox.Text) ? null : EditOrderByTextBox.Text.Trim();
-
-        UpdateEditQueryTextFromInputs();
-
-        if (topRows > 5000)
-        {
-            topRows = 5000;
-            _isSyncingEditQuery = true;
-            EditTopRowsTextBox.Text = "5000";
-            _isSyncingEditQuery = false;
-            UpdateEditQueryTextFromInputs();
-        }
-
         SetExecutionState(true);
-        SetStatus(_currentFullOutputMode
-            ? $"Loading editable rows from {_selectedTable.FullName} (full output mode)..."
-            : $"Loading editable rows from {_selectedTable.FullName}...");
+        SetStatus(_isEditRowsCustomQueryMode
+            ? (_currentFullOutputMode
+                ? $"Loading editable rows from custom SQL (full output mode)..."
+                : "Loading editable rows from custom SQL...")
+            : (_currentFullOutputMode
+                ? $"Loading editable rows from {_selectedTable.FullName} (full output mode)..."
+                : $"Loading editable rows from {_selectedTable.FullName}..."));
 
         try
         {
-            _editableResultsTable = await _rowEditService.LoadTopRowsAsync(
-                connectionString,
-                _selectedTable.SchemaName,
-                _selectedTable.TableName,
-                topRows,
-                filter,
-                orderBy,
-                ParseTimeoutSeconds(),
-                CancellationToken.None);
+            if (_isEditRowsCustomQueryMode)
+            {
+                var sqlToExecute = editQueryMode.Sql;
+                if (string.IsNullOrWhiteSpace(sqlToExecute))
+                {
+                    SetStatus("Edit query is required.");
+                    return;
+                }
+
+                TrackRecentSqlFragments(sqlToExecute);
+
+                var result = await _databaseQueryService.ExecuteAsync(
+                    connectionString,
+                    sqlToExecute,
+                    ParseTimeoutSeconds(),
+                    CancellationToken.None);
+
+                if (!result.IsSuccess)
+                {
+                    SetStatus($"Failed to load editable rows: {result.ErrorMessage}");
+                    return;
+                }
+
+                if (result.DataTable is null)
+                {
+                    SetStatus("Custom SQL did not return tabular rows.");
+                    return;
+                }
+
+                _editableResultsTable = result.DataTable;
+                if (_editableResultsTable is not null)
+                {
+                    _editableResultsTable.AcceptChanges();
+                }
+            }
+            else
+            {
+                var topRows = ParseEditTopRowsInput();
+                var filter = string.IsNullOrWhiteSpace(EditFilterTextBox.Text) ? null : EditFilterTextBox.Text.Trim();
+                var orderBy = string.IsNullOrWhiteSpace(EditOrderByTextBox.Text) ? null : EditOrderByTextBox.Text.Trim();
+
+                if (topRows > 5000)
+                {
+                    topRows = 5000;
+                    _isSyncingEditQuery = true;
+                    EditTopRowsTextBox.Text = "5000";
+                    _isSyncingEditQuery = false;
+                    UpdateEditQueryTextFromInputs();
+                }
+
+                _editableResultsTable = await _rowEditService.LoadTopRowsAsync(
+                    connectionString,
+                    _selectedTable.SchemaName,
+                    _selectedTable.TableName,
+                    topRows,
+                    filter,
+                    orderBy,
+                    ParseTimeoutSeconds(),
+                    CancellationToken.None);
+            }
+
+            if (_editableResultsTable is null)
+            {
+                SetStatus("No editable rows were returned.");
+                return;
+            }
 
             _isEditMode = true;
             _currentDataTable = _editableResultsTable;
             EditRowsDataGrid.ItemsSource = _editableResultsTable.DefaultView;
-            EditRowsSummaryTextBlock.Text = $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
+            EditRowsSummaryTextBlock.Text = _isEditRowsCustomQueryMode
+                ? $"Edit Mode (Custom SQL, {_editableResultsTable.Rows.Count} rows loaded)"
+                : $"Edit Mode ({_editableResultsTable.Rows.Count} rows loaded)";
             OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
             ApplyEditModeState();
             RefreshEditRowsVisualStates();
 
-            SetStatus($"Edit mode ready for {_selectedTable.FullName}.");
+            // SetStatus(_isEditRowsCustomQueryMode
+            // ? "Edit mode ready from custom SQL."
+            // : $"Edit mode ready for {_selectedTable.FullName}.");
+            
+            SetStatus($"({_editableResultsTable.Rows.Count}) rows loaded.");
         }
         catch (Exception ex)
         {
@@ -1671,7 +2489,7 @@ public partial class MainWindow : Window
 
     private void EditRowsInput_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_isSyncingEditQuery)
+        if (_isSyncingEditQuery || _isEditRowsCustomQueryMode)
         {
             return;
         }
@@ -1679,19 +2497,338 @@ public partial class MainWindow : Window
         UpdateEditQueryTextFromInputs();
     }
 
-    private void EditQueryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    private void EditQueryTextBox_TextChanged(object sender, EventArgs e)
     {
         if (_isSyncingEditQuery)
         {
             return;
         }
 
+        if (!_isEditRowsCustomQueryMode)
+        {
+            SetEditRowsQueryMode(true);
+            _ = UpdateSqlSuggestionsForAsync(_editRowsSqlEditor!);
+            return;
+        }
+
         SyncInputsFromEditQueryText();
+        _ = UpdateSqlSuggestionsForAsync(_editRowsSqlEditor!);
+    }
+
+    private void SqlEditorTextBox_TextChanged(object sender, EventArgs e)
+    {
+        if (ReferenceEquals(sender, QueryTextBox))
+        {
+            _ = UpdateSqlSuggestionsForAsync(_sqlEditor!);
+            return;
+        }
+
+        if (ReferenceEquals(sender, EditQueryTextBox))
+        {
+            _ = UpdateSqlSuggestionsForAsync(_editRowsSqlEditor!);
+        }
+    }
+
+    private void SqlEditorTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var editor = ReferenceEquals(sender, QueryTextBox)
+            ? _sqlEditor
+            : ReferenceEquals(sender, EditQueryTextBox)
+                ? _editRowsSqlEditor
+                : null;
+
+        if (editor is null)
+        {
+            return;
+        }
+
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Space)
+        {
+            _ = UpdateSqlSuggestionsForAsync(editor, allowEmptyPrefix: true, debounceMs: 0);
+            e.Handled = true;
+            return;
+        }
+
+        if (!SqlSuggestionPopup.IsOpen || !ReferenceEquals(_activeSqlSuggestionTextEditor, editor))
+        {
+            return;
+        }
+
+        if (e.Key == Key.Down)
+        {
+            if (SqlSuggestionListBox.Items.Count == 0)
+            {
+                return;
+            }
+
+            var nextIndex = Math.Min(SqlSuggestionListBox.SelectedIndex + 1, SqlSuggestionListBox.Items.Count - 1);
+            SqlSuggestionListBox.SelectedIndex = Math.Max(0, nextIndex);
+            SqlSuggestionListBox.ScrollIntoView(SqlSuggestionListBox.SelectedItem);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Up)
+        {
+            if (SqlSuggestionListBox.Items.Count == 0)
+            {
+                return;
+            }
+
+            var previousIndex = Math.Max(SqlSuggestionListBox.SelectedIndex - 1, 0);
+            SqlSuggestionListBox.SelectedIndex = previousIndex;
+            SqlSuggestionListBox.ScrollIntoView(SqlSuggestionListBox.SelectedItem);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key is Key.Enter or Key.Tab)
+        {
+            if (TryApplySelectedSqlSuggestion())
+            {
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            HideSqlSuggestions();
+            e.Handled = true;
+        }
+    }
+
+    private void SqlSuggestionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        TryApplySelectedSqlSuggestion();
+    }
+
+    private async Task UpdateSqlSuggestionsForAsync(ISqlTextEditor editor, bool allowEmptyPrefix = false, int debounceMs = 120)
+    {
+        if (editor is null)
+        {
+            HideSqlSuggestions();
+            return;
+        }
+
+        _sqlSuggestionDebounceCts?.Cancel();
+        _sqlSuggestionDebounceCts?.Dispose();
+        _sqlSuggestionDebounceCts = new CancellationTokenSource();
+        var cancellationToken = _sqlSuggestionDebounceCts.Token;
+
+        try
+        {
+            if (debounceMs > 0)
+            {
+                await Task.Delay(debounceMs, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (!TryGetCurrentSqlToken(editor, out var token, out var tokenStart, out var tokenLength))
+        {
+            HideSqlSuggestions();
+            return;
+        }
+
+        if (!allowEmptyPrefix && string.IsNullOrWhiteSpace(token))
+        {
+            HideSqlSuggestions();
+            return;
+        }
+
+        var catalogSnapshot = _sqlCompletionCatalogService.GetSnapshot();
+
+        var tableCandidates = catalogSnapshot.Tables.Count > 0
+            ? catalogSnapshot.Tables
+            : _tables;
+
+        var storedProcedureCandidates = catalogSnapshot.StoredProcedures.Count > 0
+            ? catalogSnapshot.StoredProcedures
+            : _storedProcedures;
+
+        var columnCandidates = catalogSnapshot.GlobalColumns
+            .Concat(_selectedColumns)
+            .GroupBy(x => $"{x.SchemaName}.{x.TableName}.{x.ColumnName}", StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .ToList();
+
+        var procedureParameterCandidates = catalogSnapshot.ProcedureParameters
+            .Concat(_selectedProcedureParameters)
+            .GroupBy(x => x.ParameterName, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .ToList();
+
+        var request = new SqlSuggestionRequest
+        {
+            SqlText = editor.Text ?? string.Empty,
+            Token = token,
+            TokenStart = tokenStart,
+            Keywords = catalogSnapshot.Keywords,
+            Functions = catalogSnapshot.Functions,
+            Snippets = catalogSnapshot.Snippets,
+            Tables = tableCandidates,
+            SelectedColumns = columnCandidates,
+            StoredProcedures = storedProcedureCandidates,
+            ProcedureParameters = procedureParameterCandidates,
+            ForeignKeys = catalogSnapshot.ForeignKeys.Count > 0 ? catalogSnapshot.ForeignKeys : _foreignKeys,
+            RecentFragments = GetRecentSqlFragments(),
+            MaxResults = 30
+        };
+
+        var suggestions = _sqlSuggestionEngine.GetSuggestions(request);
+        if (suggestions.Count == 0)
+        {
+            HideSqlSuggestions();
+            return;
+        }
+
+        _activeSqlSuggestionTextEditor = editor;
+        _activeSqlSuggestionTokenStart = tokenStart;
+        _activeSqlSuggestionTokenLength = tokenLength;
+
+        SqlSuggestionListBox.ItemsSource = suggestions;
+        SqlSuggestionListBox.SelectedIndex = 0;
+
+        SqlSuggestionPopup.PlacementTarget = editor.Element;
+        SqlSuggestionPopup.HorizontalOffset = 16;
+        SqlSuggestionPopup.VerticalOffset = 24;
+        SqlSuggestionPopup.IsOpen = true;
+    }
+
+    private static bool TryGetCurrentSqlToken(ISqlTextEditor editor, out string token, out int tokenStart, out int tokenLength)
+    {
+        token = string.Empty;
+        tokenStart = 0;
+        tokenLength = 0;
+
+        if (editor is null)
+        {
+            return false;
+        }
+
+        var text = editor.Text ?? string.Empty;
+        var caret = Math.Clamp(editor.CaretIndex, 0, text.Length);
+
+        var start = caret;
+        while (start > 0 && IsSqlTokenCharacter(text[start - 1]))
+        {
+            start--;
+        }
+
+        var end = caret;
+        while (end < text.Length && IsSqlTokenCharacter(text[end]))
+        {
+            end++;
+        }
+
+        tokenStart = start;
+        tokenLength = end - start;
+        if (tokenLength < 0)
+        {
+            return false;
+        }
+
+        token = tokenLength == 0 ? string.Empty : text.Substring(tokenStart, tokenLength);
+        return true;
+    }
+
+    private static bool IsSqlTokenCharacter(char value)
+    {
+        return char.IsLetterOrDigit(value)
+            || value is '_' or '@' or '[' or ']' or '.';
+    }
+
+    private bool TryApplySelectedSqlSuggestion()
+    {
+        if (!SqlSuggestionPopup.IsOpen
+            || _activeSqlSuggestionTextEditor is null
+            || SqlSuggestionListBox.SelectedItem is not string selectedSuggestion)
+        {
+            return false;
+        }
+
+        var editor = _activeSqlSuggestionTextEditor;
+        var safeStart = Math.Clamp(_activeSqlSuggestionTokenStart, 0, editor.Text.Length);
+        var safeLength = Math.Clamp(_activeSqlSuggestionTokenLength, 0, editor.Text.Length - safeStart);
+
+        editor.Select(safeStart, safeLength);
+        editor.ReplaceSelection(selectedSuggestion + " ");
+        editor.CaretIndex = safeStart + selectedSuggestion.Length + 1;
+        editor.Select(editor.CaretIndex, 0);
+        editor.Focus();
+
+        HideSqlSuggestions();
+        return true;
+    }
+
+    private void HideSqlSuggestions()
+    {
+        SqlSuggestionPopup.IsOpen = false;
+        SqlSuggestionListBox.ItemsSource = null;
+        _activeSqlSuggestionTextEditor = null;
+        _activeSqlSuggestionTokenStart = 0;
+        _activeSqlSuggestionTokenLength = 0;
+    }
+
+    private void TrackRecentSqlFragments(string sqlText)
+    {
+        if (string.IsNullOrWhiteSpace(sqlText))
+        {
+            return;
+        }
+
+        foreach (var fragment in ExtractSqlFragments(sqlText))
+        {
+            if (_recentSqlFragmentLookup.Contains(fragment))
+            {
+                continue;
+            }
+
+            _recentSqlFragments.AddFirst(fragment);
+            _recentSqlFragmentLookup.Add(fragment);
+
+            while (_recentSqlFragments.Count > MaxRecentSqlFragments)
+            {
+                var last = _recentSqlFragments.Last;
+                if (last is null)
+                {
+                    break;
+                }
+
+                _recentSqlFragmentLookup.Remove(last.Value);
+                _recentSqlFragments.RemoveLast();
+            }
+        }
+    }
+
+    private IReadOnlyList<string> GetRecentSqlFragments()
+    {
+        return _recentSqlFragments.ToList();
+    }
+
+    private static IEnumerable<string> ExtractSqlFragments(string sqlText)
+    {
+        return sqlText
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static part => Regex.Replace(part, @"\s+", " ").Trim())
+            .Where(static part => part.Length >= 12)
+            .Select(static part => part.Length > 120 ? part[..120] + "..." : part)
+            .Take(6);
     }
 
     private void UpdateEditQueryTextFromInputs()
     {
-        if (_isSyncingEditQuery)
+        if (_isSyncingEditQuery || _isEditRowsCustomQueryMode)
         {
             return;
         }
@@ -1709,7 +2846,7 @@ public partial class MainWindow : Window
 
         _isSyncingEditQuery = true;
         EditQueryTextBox.Text = generatedSql;
-        EditQueryTextBox.CaretIndex = EditQueryTextBox.Text.Length;
+        EditQueryTextBox.CaretOffset = EditQueryTextBox.Text.Length;
         _isSyncingEditQuery = false;
     }
 
@@ -1791,7 +2928,8 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (!int.TryParse(match.Groups["top"].Value, out topRows) || topRows <= 0)
+        if (match.Groups["top"].Success
+            && (!int.TryParse(match.Groups["top"].Value, out topRows) || topRows <= 0))
         {
             return false;
         }
@@ -1815,6 +2953,94 @@ public partial class MainWindow : Window
         }
 
         return true;
+    }
+
+    private void EditRowsCustomQueryModeCheckBox_Checked(object sender, RoutedEventArgs e)
+    {
+        SetEditRowsQueryMode(true, updateToggle: false);
+    }
+
+    private void EditRowsCustomQueryModeCheckBox_Unchecked(object sender, RoutedEventArgs e)
+    {
+        SetEditRowsQueryMode(false, updateToggle: false);
+    }
+
+    private void SetEditRowsQueryMode(bool customMode, bool updateToggle = true)
+    {
+        if (_isEditRowsCustomQueryMode == customMode)
+        {
+            if (updateToggle && EditRowsCustomQueryModeCheckBox is not null)
+            {
+                _isSyncingEditQuery = true;
+                EditRowsCustomQueryModeCheckBox.IsChecked = customMode;
+                _isSyncingEditQuery = false;
+            }
+
+            return;
+        }
+
+        if (!customMode)
+        {
+            var generatedSql = BuildEditRowsQuery(
+                ParseEditTopRowsInput(),
+                string.IsNullOrWhiteSpace(EditFilterTextBox.Text) ? null : EditFilterTextBox.Text.Trim(),
+                string.IsNullOrWhiteSpace(EditOrderByTextBox.Text) ? null : EditOrderByTextBox.Text.Trim());
+
+            if (!string.Equals(EditQueryTextBox.Text, generatedSql, StringComparison.Ordinal))
+            {
+                var decision = MessageBox.Show(
+                    "Switching to structured mode will replace the current custom query text with a generated query based on Top/Filter/Order. Continue?",
+                    "Switch Query Mode",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (decision != MessageBoxResult.Yes)
+                {
+                    if (EditRowsCustomQueryModeCheckBox is not null)
+                    {
+                        _isSyncingEditQuery = true;
+                        EditRowsCustomQueryModeCheckBox.IsChecked = true;
+                        _isSyncingEditQuery = false;
+                    }
+
+                    return;
+                }
+            }
+        }
+
+        _isEditRowsCustomQueryMode = customMode;
+
+        if (updateToggle && EditRowsCustomQueryModeCheckBox is not null)
+        {
+            _isSyncingEditQuery = true;
+            EditRowsCustomQueryModeCheckBox.IsChecked = customMode;
+            _isSyncingEditQuery = false;
+        }
+
+        if (EditTopRowsTextBox is not null)
+        {
+            EditTopRowsTextBox.IsEnabled = !customMode;
+        }
+
+        if (EditFilterTextBox is not null)
+        {
+            EditFilterTextBox.IsEnabled = !customMode;
+        }
+
+        if (EditOrderByTextBox is not null)
+        {
+            EditOrderByTextBox.IsEnabled = !customMode;
+        }
+
+        if (customMode)
+        {
+            SetStatus("Custom SQL mode enabled for Edit Rows.");
+            SyncInputsFromEditQueryText();
+            return;
+        }
+
+        SetStatus("Structured mode enabled for Edit Rows.");
+        UpdateEditQueryTextFromInputs();
     }
 
     private static IReadOnlyList<RowUpdateRequest> BuildRowUpdates(DataTable table, IReadOnlyList<ColumnSchemaInfo> columns)
@@ -2071,6 +3297,15 @@ public partial class MainWindow : Window
         public bool SendAsNull { get; set; }
 
         public bool IsOutput { get; init; }
+    }
+
+    private sealed class DeleteColumnSelectionRow
+    {
+        public required string ColumnName { get; init; }
+
+        public required string DataType { get; init; }
+
+        public bool IsSelected { get; set; }
     }
 
     private sealed class QueryParameterEditorRow
