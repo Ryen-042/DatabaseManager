@@ -5,6 +5,8 @@
 
 # dotenv files
 .env
+*.lscache
+plan.md
 
 # User-specific files
 *.rsuser
