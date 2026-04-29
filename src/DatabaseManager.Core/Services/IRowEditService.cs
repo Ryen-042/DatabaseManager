@@ -43,4 +43,13 @@ public interface IRowEditService
         IReadOnlyDictionary<string, object?> keyValues,
         int commandTimeoutSeconds,
         CancellationToken cancellationToken);
+
+    Task<RowDeleteByColumnsResult> DeleteRowsBySelectedColumnsAsync(
+        string connectionString,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<string> selectedColumns,
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> selectedRows,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken);
 }

@@ -15,4 +15,12 @@ public interface IQueryAssistantService
     string BuildExecuteProcedureQuery(StoredProcedureSchemaInfo procedure, IReadOnlyList<StoredProcedureParameterInfo> parameters);
 
     string BuildTableSchemaText(TableSchemaInfo table, IReadOnlyList<ColumnSchemaInfo> columns);
+
+    string BuildDropTableScript(TableSchemaInfo table);
+
+    string BuildDropAndCreateTableScript(TableSchemaInfo table, IReadOnlyList<ColumnSchemaInfo> columns);
+
+    string BuildDropProcedureScript(StoredProcedureSchemaInfo procedure);
+
+    string BuildAlterProcedureScript(StoredProcedureSchemaInfo procedure, string? currentDefinition);
 }

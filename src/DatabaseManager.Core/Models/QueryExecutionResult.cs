@@ -14,5 +14,7 @@ public sealed class QueryExecutionResult
 
     public TimeSpan Duration { get; init; }
 
+    public IReadOnlyList<QueryResultSet>? ResultSets { get; init; }
+
     public IReadOnlyDictionary<string, object?>? OutputParameters { get; init; }
 }

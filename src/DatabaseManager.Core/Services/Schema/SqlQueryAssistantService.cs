@@ -103,6 +103,43 @@ public sealed class SqlQueryAssistantService : IQueryAssistantService
         return sb.ToString();
     }
 
+    public string BuildDropTableScript(TableSchemaInfo table)
+    {
+        return $"IF OBJECT_ID(N'{table.FullName}', N'U') IS NOT NULL{Environment.NewLine}BEGIN{Environment.NewLine}    DROP TABLE {table.FullName};{Environment.NewLine}END;";
+    }
+
+    public string BuildDropAndCreateTableScript(TableSchemaInfo table, IReadOnlyList<ColumnSchemaInfo> columns)
+    {
+        var dropScript = BuildDropTableScript(table);
+        var createScript = BuildTableSchemaText(table, columns);
+
+        return $"{dropScript}{Environment.NewLine}{Environment.NewLine}GO{Environment.NewLine}{Environment.NewLine}{createScript}";
+    }
+
+    public string BuildDropProcedureScript(StoredProcedureSchemaInfo procedure)
+    {
+        return $"IF OBJECT_ID(N'{procedure.FullName}', N'P') IS NOT NULL{Environment.NewLine}BEGIN{Environment.NewLine}    DROP PROCEDURE {procedure.FullName};{Environment.NewLine}END;";
+    }
+
+    public string BuildAlterProcedureScript(StoredProcedureSchemaInfo procedure, string? currentDefinition)
+    {
+        if (string.IsNullOrWhiteSpace(currentDefinition))
+        {
+            return $"-- Procedure definition is unavailable for {procedure.FullName}.{Environment.NewLine}-- Ensure your login has VIEW DEFINITION permission or script manually.{Environment.NewLine}{Environment.NewLine}ALTER PROCEDURE {procedure.FullName}{Environment.NewLine}AS{Environment.NewLine}BEGIN{Environment.NewLine}    SET NOCOUNT ON;{Environment.NewLine}    -- TODO: Add procedure body.{Environment.NewLine}END;";
+        }
+
+        var definition = currentDefinition.Trim();
+        var createToken = "CREATE PROCEDURE";
+
+        var index = definition.IndexOf(createToken, StringComparison.OrdinalIgnoreCase);
+        if (index >= 0)
+        {
+            return definition.Remove(index, createToken.Length).Insert(index, "ALTER PROCEDURE");
+        }
+
+        return $"-- Existing definition did not contain CREATE PROCEDURE token; review before execution.{Environment.NewLine}{definition}";
+    }
+
     private static string BuildWhereClause(IReadOnlyList<ColumnSchemaInfo> primaryKeys)
     {
         if (primaryKeys.Count == 0)

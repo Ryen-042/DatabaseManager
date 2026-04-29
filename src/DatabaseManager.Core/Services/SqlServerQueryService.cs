@@ -63,31 +63,58 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
                 }
             }
 
-            if (LooksLikeReadQuery(sql))
-            {
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-                var dataTable = new DataTable();
-                dataTable.Load(reader);
+            var resultSets = new List<QueryResultSet>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
-                stopwatch.Stop();
-                return new QueryExecutionResult
+            var resultSetIndex = 1;
+            do
+            {
+                if (reader.FieldCount <= 0)
                 {
-                    IsSuccess = true,
+                    continue;
+                }
+
+                var dataTable = await ReadCurrentResultSetAsync(reader, cancellationToken);
+
+                resultSets.Add(new QueryResultSet
+                {
+                    Title = $"Result Set {resultSetIndex++}",
                     DataTable = dataTable,
-                    AffectedRows = dataTable.Rows.Count,
-                    Duration = stopwatch.Elapsed
-                };
+                    AffectedRows = dataTable.Rows.Count
+                });
+            }
+            while (await reader.NextResultAsync(cancellationToken));
+
+            var affectedRows = reader.RecordsAffected;
+            if (resultSets.Count == 0)
+            {
+                resultSets.Add(new QueryResultSet
+                {
+                    Title = "Statement Summary",
+                    DataTable = null,
+                    AffectedRows = Math.Max(0, affectedRows)
+                });
+            }
+            else if (affectedRows > 0)
+            {
+                resultSets.Add(new QueryResultSet
+                {
+                    Title = "Statement Summary",
+                    DataTable = null,
+                    AffectedRows = affectedRows
+                });
             }
 
-            var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken);
+            var primaryDataTable = resultSets.FirstOrDefault(x => x.DataTable is not null)?.DataTable;
             stopwatch.Stop();
 
             return new QueryExecutionResult
             {
                 IsSuccess = true,
-                DataTable = null,
-                AffectedRows = affectedRows,
-                Duration = stopwatch.Elapsed
+                DataTable = primaryDataTable,
+                AffectedRows = primaryDataTable is null ? Math.Max(0, affectedRows) : primaryDataTable.Rows.Count,
+                Duration = stopwatch.Elapsed,
+                ResultSets = resultSets
             };
         }
         catch (Exception ex)
@@ -99,17 +126,48 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
                 ErrorMessage = ex.Message,
                 DataTable = null,
                 AffectedRows = 0,
-                Duration = stopwatch.Elapsed
+                Duration = stopwatch.Elapsed,
+                ResultSets = null
             };
         }
     }
 
-    private static bool LooksLikeReadQuery(string sql)
+    private static async Task<DataTable> ReadCurrentResultSetAsync(SqlDataReader reader, CancellationToken cancellationToken)
     {
-        var trimmed = sql.TrimStart();
-        return trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("EXEC", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("SHOW", StringComparison.OrdinalIgnoreCase);
+        var table = new DataTable();
+
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            var baseColumnName = reader.GetName(i);
+            var columnName = GetUniqueColumnName(table, string.IsNullOrWhiteSpace(baseColumnName) ? $"Column{i + 1}" : baseColumnName);
+            table.Columns.Add(columnName, reader.GetFieldType(i));
+        }
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var values = new object[reader.FieldCount];
+            reader.GetValues(values);
+            table.Rows.Add(values);
+        }
+
+        return table;
+    }
+
+    private static string GetUniqueColumnName(DataTable table, string baseName)
+    {
+        if (!table.Columns.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        var suffix = 1;
+        var candidate = $"{baseName}_{suffix}";
+        while (table.Columns.Contains(candidate))
+        {
+            suffix++;
+            candidate = $"{baseName}_{suffix}";
+        }
+
+        return candidate;
     }
 }
