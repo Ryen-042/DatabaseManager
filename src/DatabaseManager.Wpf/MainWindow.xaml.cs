@@ -18,6 +18,7 @@ using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
 using DatabaseManager.Wpf.Editors;
 using DatabaseManager.Wpf.SqlSuggestions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Win32;
 
 namespace DatabaseManager.Wpf;
@@ -33,6 +34,9 @@ public partial class MainWindow : Window
     private const int OutputResultsTabIndex = 3;
     private const int OutputProcedureRunnerTabIndex = 4;
     private const int MaxRecentSqlFragments = 20;
+    private const int SchemaAssistantDatabasesTabIndex = 0;
+    private const int SchemaAssistantTablesTabIndex = 1;
+    private const int SchemaAssistantProceduresTabIndex = 2;
 
     private readonly IDatabaseQueryService _databaseQueryService = new SqlServerQueryService();
     private readonly IRowEditService _rowEditService = new RowEditService();
@@ -49,10 +53,23 @@ public partial class MainWindow : Window
     private List<TableSchemaInfo> _tables = new();
     private List<StoredProcedureSchemaInfo> _storedProcedures = new();
     private List<ForeignKeySchemaInfo> _foreignKeys = new();
+    private List<string> _databases = new();
     private List<ColumnSchemaInfo> _selectedColumns = new();
     private List<StoredProcedureParameterInfo> _selectedProcedureParameters = new();
     private TableSchemaInfo? _selectedTable;
     private StoredProcedureSchemaInfo? _selectedStoredProcedure;
+    private string? _selectedDatabaseName;
+    private bool _isUpdatingDatabaseSelection;
+    private bool _isLoadingDatabases;
+    private bool _isExecuting;
+    private bool _showSystemDatabases;
+    private static readonly HashSet<string> SystemDatabaseNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "master",
+        "model",
+        "msdb",
+        "tempdb"
+    };
     private readonly ObservableCollection<ProcedureParameterEditorRow> _runnerParameterRows = new();
     private readonly GridLength _schemaPaneExpandedWidth = new(330);
     private DataTable? _editableResultsTable;
@@ -105,6 +122,7 @@ public partial class MainWindow : Window
         ApplyEditModeState();
         ApplyEditRowsCornerButtonStyle();
         UpdateEditQueryTextFromInputs();
+        UpdateActiveDatabaseLabel();
         await ConnectToDatabaseAsync(triggeredOnStartup: true);
         if (_tables.Count == 0 && _storedProcedures.Count == 0)
         {
@@ -213,7 +231,7 @@ public partial class MainWindow : Window
 
     private async Task ConnectToDatabaseAsync(bool triggeredOnStartup)
     {
-        if (!TryGetConnectionString(out var connectionString, showMissingStatus: !triggeredOnStartup))
+        if (!TryGetBaseConnectionString(out var baseConnectionString, showMissingStatus: !triggeredOnStartup))
         {
             if (triggeredOnStartup)
             {
@@ -228,7 +246,7 @@ public partial class MainWindow : Window
 
         using var cts = new CancellationTokenSource();
         var result = await _databaseQueryService.ExecuteAsync(
-            connectionString,
+            baseConnectionString,
             "SELECT 1 AS IsConnected;",
             ParseTimeoutSeconds(),
             cts.Token);
@@ -236,7 +254,22 @@ public partial class MainWindow : Window
         if (result.IsSuccess)
         {
             SetStatus("Connected successfully.");
-            await LoadSchemaMetadataAsync(connectionString);
+            await LoadDatabasesAsync(baseConnectionString, keepSelection: true);
+
+            var initialCatalog = GetInitialCatalogFromConnectionString(baseConnectionString);
+            if (!string.IsNullOrWhiteSpace(initialCatalog))
+            {
+                await SelectDatabaseAsync(initialCatalog, baseConnectionString, suppressPrompt: true);
+            }
+            else if (!string.IsNullOrWhiteSpace(_selectedDatabaseName))
+            {
+                await SelectDatabaseAsync(_selectedDatabaseName, baseConnectionString, suppressPrompt: true);
+            }
+            else
+            {
+                SchemaAssistantTabControl.SelectedIndex = SchemaAssistantDatabasesTabIndex;
+                SetStatus("Connected. Select a database from the Databases tab.");
+            }
         }
         else
         {
@@ -1015,6 +1048,215 @@ public partial class MainWindow : Window
         TemplatesListBox.ItemsSource = templates;
     }
 
+    private async void RefreshDatabasesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetBaseConnectionString(out var baseConnectionString))
+        {
+            return;
+        }
+
+        await LoadDatabasesAsync(baseConnectionString, keepSelection: true);
+    }
+
+    private void DatabaseSearchTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        ApplyDatabaseFilter();
+    }
+
+    private void ShowSystemDatabasesCheckBox_Checked(object sender, RoutedEventArgs e)
+    {
+        _showSystemDatabases = true;
+        ApplyDatabaseFilter();
+    }
+
+    private void ShowSystemDatabasesCheckBox_Unchecked(object sender, RoutedEventArgs e)
+    {
+        _showSystemDatabases = false;
+        ApplyDatabaseFilter();
+    }
+
+    private async void DatabasesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingDatabaseSelection)
+        {
+            return;
+        }
+
+        if (DatabasesListBox.SelectedItem is not string selectedDatabase || string.IsNullOrWhiteSpace(selectedDatabase))
+        {
+            _selectedDatabaseName = null;
+            UpdateActiveDatabaseLabel();
+            return;
+        }
+
+        if (string.Equals(selectedDatabase, _selectedDatabaseName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (_isExecuting)
+        {
+            var message = $"A query is currently running. Switch active database to '{selectedDatabase}'?";
+            var result = MessageBox.Show(this, message, "Confirm database switch", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes)
+            {
+                _isUpdatingDatabaseSelection = true;
+                DatabasesListBox.SelectedItem = _selectedDatabaseName;
+                _isUpdatingDatabaseSelection = false;
+                return;
+            }
+        }
+
+        _selectedDatabaseName = selectedDatabase;
+        UpdateActiveDatabaseLabel();
+
+        if (!TryGetConnectionString(out var connectionString, showMissingStatus: false))
+        {
+            return;
+        }
+
+        await LoadSchemaMetadataAsync(connectionString);
+    }
+
+    private async Task LoadDatabasesAsync(string baseConnectionString, bool keepSelection)
+    {
+        if (_isLoadingDatabases)
+        {
+            return;
+        }
+
+        _isLoadingDatabases = true;
+        try
+        {
+            SetStatus("Loading databases...");
+
+            var listConnectionString = BuildDatabaseListConnectionString(baseConnectionString);
+            var databases = await _databaseSchemaService.GetDatabasesAsync(listConnectionString, CancellationToken.None);
+
+            _databases = databases
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            ApplyDatabaseFilter();
+
+            if (keepSelection && !string.IsNullOrWhiteSpace(_selectedDatabaseName))
+            {
+                SelectDatabaseInList(_selectedDatabaseName);
+            }
+
+            SetStatus($"Databases loaded: {_databases.Count} found.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to load databases: {ex.Message}");
+        }
+        finally
+        {
+            _isLoadingDatabases = false;
+        }
+    }
+
+    private void ApplyDatabaseFilter()
+    {
+        var query = DatabaseSearchTextBox.Text.Trim();
+        var filtered = _databases
+            .Where(name => _showSystemDatabases
+                || !SystemDatabaseNames.Contains(name)
+                || string.Equals(name, _selectedDatabaseName, StringComparison.OrdinalIgnoreCase))
+            .Where(name => string.IsNullOrWhiteSpace(query)
+                || name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        DatabasesListBox.ItemsSource = filtered;
+
+        if (!string.IsNullOrWhiteSpace(_selectedDatabaseName))
+        {
+            SelectDatabaseInList(_selectedDatabaseName);
+        }
+    }
+
+    private void SelectDatabaseInList(string databaseName)
+    {
+        _isUpdatingDatabaseSelection = true;
+        DatabasesListBox.SelectedItem = DatabasesListBox.Items
+            .Cast<object>()
+            .Select(x => x as string)
+            .FirstOrDefault(x => string.Equals(x, databaseName, StringComparison.OrdinalIgnoreCase));
+        _isUpdatingDatabaseSelection = false;
+    }
+
+    private async Task SelectDatabaseAsync(string databaseName, string baseConnectionString, bool suppressPrompt)
+    {
+        if (string.IsNullOrWhiteSpace(databaseName))
+        {
+            return;
+        }
+
+        if (!suppressPrompt && _isExecuting)
+        {
+            var message = $"A query is currently running. Switch active database to '{databaseName}'?";
+            var result = MessageBox.Show(this, message, "Confirm database switch", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+        }
+
+        _selectedDatabaseName = databaseName;
+        UpdateActiveDatabaseLabel();
+        SelectDatabaseInList(databaseName);
+
+        var connectionString = BuildConnectionStringWithDatabase(baseConnectionString, databaseName);
+        await LoadSchemaMetadataAsync(connectionString);
+    }
+
+    private void UpdateActiveDatabaseLabel()
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(_selectedDatabaseName) ? "(none)" : _selectedDatabaseName;
+        ActiveDatabaseTextBlock.Text = $"Active database: {name}";
+    }
+
+    private static string BuildDatabaseListConnectionString(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        if (string.IsNullOrWhiteSpace(builder.InitialCatalog))
+        {
+            builder.InitialCatalog = "master";
+        }
+
+        return builder.ConnectionString;
+    }
+
+    private static string BuildConnectionStringWithDatabase(string connectionString, string databaseName)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString)
+        {
+            InitialCatalog = databaseName
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private static string? GetInitialCatalogFromConnectionString(string connectionString)
+    {
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString);
+            return string.IsNullOrWhiteSpace(builder.InitialCatalog) ? null : builder.InitialCatalog;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
     private async void RefreshSchemaButton_Click(object sender, RoutedEventArgs e)
     {
         if (!TryGetConnectionString(out var connectionString))
@@ -1457,7 +1699,16 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private bool TryGetConnectionString(out string connectionString, bool showMissingStatus = true)
+    private void ConnectionStringTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _selectedDatabaseName = null;
+        _databases.Clear();
+        DatabasesListBox.ItemsSource = null;
+        DatabasesListBox.SelectedItem = null;
+        UpdateActiveDatabaseLabel();
+    }
+
+    private bool TryGetBaseConnectionString(out string connectionString, bool showMissingStatus = true)
     {
         connectionString = ConnectionStringTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -1470,6 +1721,36 @@ public partial class MainWindow : Window
             return false;
         }
 
+        return true;
+    }
+
+    private bool TryGetConnectionString(out string connectionString, bool showMissingStatus = true)
+    {
+        if (!TryGetBaseConnectionString(out var baseConnectionString, showMissingStatus))
+        {
+            connectionString = string.Empty;
+            return false;
+        }
+
+        var initialCatalog = GetInitialCatalogFromConnectionString(baseConnectionString);
+        if (string.IsNullOrWhiteSpace(_selectedDatabaseName))
+        {
+            if (!string.IsNullOrWhiteSpace(initialCatalog))
+            {
+                connectionString = baseConnectionString;
+                return true;
+            }
+
+            if (showMissingStatus)
+            {
+                SetStatus("Select a database from the Databases tab.");
+            }
+
+            connectionString = string.Empty;
+            return false;
+        }
+
+        connectionString = BuildConnectionStringWithDatabase(baseConnectionString, _selectedDatabaseName);
         return true;
     }
 
@@ -1789,6 +2070,7 @@ public partial class MainWindow : Window
 
     private void SetExecutionState(bool isExecuting)
     {
+        _isExecuting = isExecuting;
         RunQueryButton.IsEnabled = !isExecuting;
         ConnectButton.IsEnabled = !isExecuting;
         CancelButton.IsEnabled = isExecuting;
@@ -2185,8 +2467,8 @@ public partial class MainWindow : Window
     private void UpdateSchemaDetailsPanelByAssistantTab()
     {
         var selectedIndex = SchemaAssistantTabControl.SelectedIndex;
-        var showTableDetails = selectedIndex == 0;
-        var showProcedureDetails = selectedIndex == 1;
+        var showTableDetails = selectedIndex == SchemaAssistantTablesTabIndex;
+        var showProcedureDetails = selectedIndex == SchemaAssistantProceduresTabIndex;
 
         TableDetailsPanel.Visibility = showTableDetails ? Visibility.Visible : Visibility.Collapsed;
         ProcedureDetailsPanel.Visibility = showProcedureDetails ? Visibility.Visible : Visibility.Collapsed;

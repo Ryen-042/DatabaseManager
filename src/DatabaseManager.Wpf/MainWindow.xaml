@@ -43,6 +43,64 @@
                     <TextBlock Text="Schema Assistant" FontSize="14" FontWeight="SemiBold" />
 
                     <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,10,0,0" SelectionChanged="SchemaAssistantTabControl_SelectionChanged">
+                        <TabControl.Template>
+                            <ControlTemplate TargetType="TabControl">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TabPanel Grid.Row="0" IsItemsHost="True" Margin="0,0,0,8" />
+                                    <ContentPresenter Grid.Row="1"
+                                                      ContentSource="SelectedContent"
+                                                      Margin="0" />
+                                </Grid>
+                            </ControlTemplate>
+                        </TabControl.Template>
+                        <TabItem Header="Databases">
+                            <Grid Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock x:Name="ActiveDatabaseTextBlock"
+                                           FontWeight="SemiBold"
+                                           Text="Active database: (none)"
+                                           Margin="0,0,0,8" />
+
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button Content="Refresh" Margin="0,0,8,0" Click="RefreshDatabasesButton_Click" />
+                                    <TextBox x:Name="DatabaseSearchTextBox"
+                                             Width="190"
+                                             VerticalContentAlignment="Center"
+                                             ToolTip="Filter databases"
+                                             TextChanged="DatabaseSearchTextBox_TextChanged" />
+                                </StackPanel>
+
+                                <Grid Grid.Row="2">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <CheckBox x:Name="ShowSystemDatabasesCheckBox"
+                                              Content="Show system databases"
+                                              Margin="0,0,0,8"
+                                              Checked="ShowSystemDatabasesCheckBox_Checked"
+                                              Unchecked="ShowSystemDatabasesCheckBox_Unchecked" />
+
+                                    <ListBox x:Name="DatabasesListBox"
+                                             Grid.Row="1"
+                                             MinHeight="220"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             SelectionChanged="DatabasesListBox_SelectionChanged" />
+                                </Grid>
+                            </Grid>
+                        </TabItem>
+
                         <TabItem Header="Tables">
                             <Grid Margin="8">
                                 <Grid.RowDefinitions>
@@ -544,6 +602,7 @@
                          Margin="0,0,8,0"
                          VerticalContentAlignment="Center"
                          ToolTip="SQL Server connection string"
+                         TextChanged="ConnectionStringTextBox_TextChanged"
                          Text="Data Source=AHMED-TAREK\SQLEXPRESS;Initial Catalog=MVMASTER;User ID=EDCTestUser; Password=123456;Connect Timeout=30;TrustServerCertificate=True;"/>
                 <TextBox x:Name="TimeoutTextBox"
                          Grid.Column="1"

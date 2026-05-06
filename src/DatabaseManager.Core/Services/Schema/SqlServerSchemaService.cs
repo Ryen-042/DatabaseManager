@@ -5,6 +5,35 @@ namespace DatabaseManager.Core.Services.Schema;
 
 public sealed class SqlServerSchemaService : IDatabaseSchemaService
 {
+    public async Task<IReadOnlyList<string>> GetDatabasesAsync(string connectionString, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT name
+            FROM sys.databases
+            WHERE state = 0
+              AND HAS_DBACCESS(name) = 1
+            ORDER BY name;
+            """;
+
+        var list = new List<string>();
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new SqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (!reader.IsDBNull(0))
+            {
+                list.Add(reader.GetString(0));
+            }
+        }
+
+        return list;
+    }
+
     public async Task<IReadOnlyList<TableSchemaInfo>> GetTablesAsync(string connectionString, CancellationToken cancellationToken)
     {
         const string sql = """
