@@ -129,6 +129,30 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (TryGetOutputTabShortcutIndex(e.Key, out var tabIndex))
+        {
+            OutputTabControl.SelectedIndex = tabIndex;
+            e.Handled = true;
+            return;
+        }
+
+        if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
+        {
+            if (e.Key == Key.R)
+            {
+                await RefreshEditRowsAsync();
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.S)
+            {
+                await SaveRowChangesAsync();
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (e.Key == Key.E)
         {
             if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
@@ -149,6 +173,21 @@ public partial class MainWindow : Window
             CancelButton_Click(CancelButton, new RoutedEventArgs());
             e.Handled = true;
         }
+    }
+
+    private static bool TryGetOutputTabShortcutIndex(Key key, out int tabIndex)
+    {
+        tabIndex = key switch
+        {
+            Key.D1 or Key.NumPad1 => 0,
+            Key.D2 or Key.NumPad2 => 1,
+            Key.D3 or Key.NumPad3 => 2,
+            Key.D4 or Key.NumPad4 => 3,
+            Key.D5 or Key.NumPad5 => 4,
+            _ => -1
+        };
+
+        return tabIndex >= 0;
     }
 
     private void SchemaPaneToggleButton_Checked(object sender, RoutedEventArgs e)
@@ -455,6 +494,22 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void EditRowsDataGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Delete)
+        {
+            return;
+        }
+
+        if (!_isEditMode || _editableResultsTable is null)
+        {
+            return;
+        }
+
+        DeleteRowMenuItem_Click(this, new RoutedEventArgs());
+        e.Handled = true;
+    }
+
     private void EditRowsDataGrid_LoadingRow(object sender, DataGridRowEventArgs e)
     {
         ApplyEditRowsRowVisualState(e.Row);
@@ -524,12 +579,6 @@ public partial class MainWindow : Window
         if (_selectedTable is null)
         {
             SetStatus("Select a table before saving row edits.");
-            return false;
-        }
-
-        if (_selectedColumns.All(c => !c.IsPrimaryKey))
-        {
-            SetStatus("Cannot save edits because the selected table has no primary key.");
             return false;
         }
 
@@ -3046,7 +3095,6 @@ public partial class MainWindow : Window
     private static IReadOnlyList<RowUpdateRequest> BuildRowUpdates(DataTable table, IReadOnlyList<ColumnSchemaInfo> columns)
     {
         var columnNames = columns.Select(c => c.ColumnName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var primaryKeyNames = columns.Where(c => c.IsPrimaryKey).Select(c => c.ColumnName).ToList();
 
         var updates = new List<RowUpdateRequest>();
         foreach (DataRow row in table.Rows)
@@ -3057,15 +3105,15 @@ public partial class MainWindow : Window
             }
 
             var keyValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var keyName in primaryKeyNames)
+            foreach (DataColumn column in table.Columns)
             {
-                if (!table.Columns.Contains(keyName))
+                if (!columnNames.Contains(column.ColumnName))
                 {
                     continue;
                 }
 
-                var value = row[keyName, DataRowVersion.Original];
-                keyValues[keyName] = value == DBNull.Value ? null : value;
+                var value = row[column, DataRowVersion.Original];
+                keyValues[column.ColumnName] = value == DBNull.Value ? null : value;
             }
 
             var currentValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);

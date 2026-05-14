@@ -77,10 +77,9 @@ public sealed class RowEditService : IRowEditService
         CancellationToken cancellationToken)
     {
         var primaryKeys = columns.Where(c => c.IsPrimaryKey).Select(c => c.ColumnName).ToList();
-        if (primaryKeys.Count == 0)
-        {
-            throw new InvalidOperationException("Cannot save changes because the selected table has no primary key.");
-        }
+        var matchColumns = primaryKeys.Count > 0
+            ? primaryKeys
+            : columns.Select(c => c.ColumnName).ToList();
 
         var updatableColumns = columns
             .Where(c => !c.IsPrimaryKey && !c.IsIdentity && !IsServerGeneratedColumn(c))
@@ -116,11 +115,18 @@ public sealed class RowEditService : IRowEditService
                     continue;
                 }
 
-                EnsurePrimaryKeyValues(primaryKeys, update.OriginalKeyValues);
+                EnsureMatchValues(matchColumns, update.OriginalKeyValues);
 
                 var setClause = string.Join(", ", setColumns.Select(c => $"[{EscapeIdentifier(c)}] = @set_{c}"));
-                var whereClause = string.Join(" AND ", primaryKeys.Select(c => $"[{EscapeIdentifier(c)}] = @key_{c}"));
+                var whereClause = BuildNullSafeWhereClause(matchColumns);
                 var sql = $"UPDATE [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] SET {setClause} WHERE {whereClause};";
+
+                if (primaryKeys.Count == 0)
+                {
+                    sql += Environment.NewLine
+                        + "IF @@ROWCOUNT <> 1" + Environment.NewLine
+                        + "    THROW 50000, 'Cannot save changes because the row is not uniquely identifiable without a primary key.', 1;";
+                }
 
                 await using var command = new SqlCommand(sql, connection, transaction)
                 {
@@ -132,7 +138,7 @@ public sealed class RowEditService : IRowEditService
                     command.Parameters.AddWithValue($"@set_{column}", ToDbValue(update.CurrentValues[column]));
                 }
 
-                foreach (var key in primaryKeys)
+                foreach (var key in matchColumns)
                 {
                     command.Parameters.AddWithValue($"@key_{key}", ToDbValue(update.OriginalKeyValues[key]));
                 }
@@ -338,15 +344,26 @@ public sealed class RowEditService : IRowEditService
             || column.DataType.Equals("timestamp", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void EnsurePrimaryKeyValues(IReadOnlyList<string> primaryKeys, IReadOnlyDictionary<string, object?> keyValues)
+    private static void EnsureMatchValues(IReadOnlyList<string> matchColumns, IReadOnlyDictionary<string, object?> keyValues)
     {
-        foreach (var key in primaryKeys)
+        foreach (var key in matchColumns)
         {
-            if (!keyValues.TryGetValue(key, out var value) || value is null or DBNull)
+            if (!keyValues.ContainsKey(key))
             {
-                throw new InvalidOperationException($"Primary key value is required for column '{key}'.");
+                throw new InvalidOperationException($"Original value is required for column '{key}'.");
             }
         }
+    }
+
+    private static void EnsurePrimaryKeyValues(IReadOnlyList<string> primaryKeys, IReadOnlyDictionary<string, object?> keyValues)
+    {
+        EnsureMatchValues(primaryKeys, keyValues);
+    }
+
+    private static string BuildNullSafeWhereClause(IReadOnlyList<string> columns)
+    {
+        return string.Join(" AND ", columns.Select(column =>
+            $"((@key_{column} IS NULL AND [{EscapeIdentifier(column)}] IS NULL) OR [{EscapeIdentifier(column)}] = @key_{column})"));
     }
 
     private static string BuildCountSql(string schemaName, string tableName, IReadOnlyList<string> selectedColumns)

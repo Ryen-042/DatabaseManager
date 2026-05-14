@@ -288,7 +288,8 @@
                                           CellEditEnding="EditRowsDataGrid_CellEditEnding"
                                           PreviewMouseRightButtonDown="ResultsDataGrid_PreviewMouseRightButtonDown"
                                           PreviewMouseLeftButtonDown="EditRowsDataGrid_PreviewMouseLeftButtonDown"
-                                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp">
+                                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp"
+                                          PreviewKeyDown="EditRowsDataGrid_PreviewKeyDown">
                                     <DataGrid.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem x:Name="DeleteRowMenuItem"
