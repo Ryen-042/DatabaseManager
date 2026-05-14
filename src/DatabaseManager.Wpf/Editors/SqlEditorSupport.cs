@@ -56,13 +56,6 @@ internal static class SqlEditorSupport
         }
 
         var foldingManager = FoldingManager.Install(editor.TextArea);
-        var foldingMargin = new FoldingMargin
-        {
-            FoldingManager = foldingManager
-        };
-
-        editor.TextArea.LeftMargins.Insert(0, foldingMargin);
-
         var foldingStrategy = new SqlFoldingStrategy();
 
         void UpdateFoldings()
@@ -72,7 +65,14 @@ internal static class SqlEditorSupport
                 return;
             }
 
-            foldingStrategy.UpdateFoldings(foldingManager, editor.Document);
+            try
+            {
+                foldingStrategy.UpdateFoldings(foldingManager, editor.Document);
+            }
+            catch
+            {
+                // Silently ignore folding errors to prevent UI crashes from text changes
+            }
         }
 
         editor.TextChanged += (_, _) => UpdateFoldings();
@@ -139,8 +139,12 @@ internal sealed class SqlFoldingStrategy
     private static IEnumerable<NewFolding> CreateFoldings(TextDocument document)
     {
         var text = document.Text;
+        if (string.IsNullOrEmpty(text))
+        {
+            yield break;
+        }
+
         var blockStack = new Stack<int>();
-        var parenStack = new Stack<int>();
         var index = 0;
 
         while (index < text.Length)
@@ -171,27 +175,12 @@ internal sealed class SqlFoldingStrategy
                 continue;
             }
 
+            if (index >= text.Length)
+            {
+                break;
+            }
+
             var current = text[index];
-            if (current == '(')
-            {
-                parenStack.Push(index);
-                index++;
-                continue;
-            }
-
-            if (current == ')' && parenStack.Count > 0)
-            {
-                var start = parenStack.Pop();
-                AddFoldingIfMultiline(document, start + 1, index, "(...)", out var folding);
-                if (folding is not null)
-                {
-                    yield return folding;
-                }
-
-                index++;
-                continue;
-            }
-
             if (TryConsumeWord(text, ref index, out var word, out var wordStart, out var wordEnd))
             {
                 if (string.Equals(word, "BEGIN", StringComparison.OrdinalIgnoreCase))
@@ -260,7 +249,7 @@ internal sealed class SqlFoldingStrategy
 
     private static bool TryConsumeStringLiteral(string text, ref int index)
     {
-        if (text[index] != '\'')
+        if (index >= text.Length || text[index] != '\'')
         {
             return false;
         }
@@ -288,7 +277,7 @@ internal sealed class SqlFoldingStrategy
 
     private static bool TryConsumeBracketedIdentifier(string text, ref int index)
     {
-        if (text[index] != '[')
+        if (index >= text.Length || text[index] != '[')
         {
             return false;
         }
@@ -314,7 +303,7 @@ internal sealed class SqlFoldingStrategy
         wordStart = index;
         wordEnd = index;
 
-        if (!char.IsLetter(text[index]) && text[index] != '_')
+        if (index >= text.Length || (!char.IsLetter(text[index]) && text[index] != '_'))
         {
             return false;
         }
@@ -335,21 +324,28 @@ internal sealed class SqlFoldingStrategy
     {
         folding = null;
 
-        if (startOffset < 0 || endOffset <= startOffset || endOffset > document.TextLength)
+        if (document?.Text == null || startOffset < 0 || endOffset <= startOffset || endOffset > document.TextLength)
         {
             return;
         }
 
-        var content = document.Text[startOffset..endOffset];
-        if (!content.Contains('\n') && !content.Contains('\r'))
+        try
         {
-            return;
-        }
+            var content = document.Text[startOffset..endOffset];
+            if (!content.Contains('\n') && !content.Contains('\r'))
+            {
+                return;
+            }
 
-        folding = new NewFolding(startOffset, endOffset)
+            folding = new NewFolding(startOffset, endOffset)
+            {
+                Name = title,
+                DefaultClosed = false
+            };
+        }
+        catch
         {
-            Name = title,
-            DefaultClosed = false
-        };
+            // Silently ignore any indexing errors
+        }
     }
 }
