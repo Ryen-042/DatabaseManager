@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Collections.ObjectModel;
+using System.Configuration;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
@@ -78,6 +79,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        var defaultConnectionString = ConfigurationManager.AppSettings["DefaultConnectionString"];
+        if (!string.IsNullOrWhiteSpace(defaultConnectionString))
+        {
+            ConnectionStringTextBox.Text = defaultConnectionString;
+        }
         _sqlEditor = new AvalonEditSqlTextEditorAdapter(QueryTextBox);
         _editRowsSqlEditor = new AvalonEditSqlTextEditorAdapter(EditQueryTextBox);
         SqlEditorSupport.Configure(QueryTextBox);

@@ -544,8 +544,7 @@
                          Grid.Column="0"
                          Margin="0,0,8,0"
                          VerticalContentAlignment="Center"
-                         ToolTip="SQL Server connection string"
-                         Text="Data Source=AHMED-TAREK\SQLEXPRESS;Initial Catalog=MVMASTER;User ID=EDCTestUser; Password=123456;Connect Timeout=30;TrustServerCertificate=True;"/>
+                         ToolTip="SQL Server connection string" />
                 <TextBox x:Name="TimeoutTextBox"
                          Grid.Column="1"
                          Margin="0,0,8,0"
