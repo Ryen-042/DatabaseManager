@@ -38,9 +38,68 @@ public static class QueryOutputModeParser
         return new QueryOutputModeParseResult(sanitizedSql, true, true);
     }
 
+    public static bool IsCreateOrAlterRoutineStatement(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            return false;
+        }
+
+        var span = sql.AsSpan().TrimStart();
+        if (!TryConsumeKeyword(ref span, "CREATE"))
+        {
+            if (!TryConsumeKeyword(ref span, "ALTER"))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if (TryConsumeKeyword(ref span, "OR"))
+            {
+                if (!TryConsumeKeyword(ref span, "ALTER"))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return TryConsumeKeyword(ref span, "PROCEDURE")
+            || TryConsumeKeyword(ref span, "PROC")
+            || TryConsumeKeyword(ref span, "FUNCTION")
+            || TryConsumeKeyword(ref span, "TRIGGER");
+    }
+
+    private static bool TryConsumeKeyword(ref ReadOnlySpan<char> span, string keyword)
+    {
+        var trimmed = span.TrimStart();
+        if (trimmed.Length < keyword.Length)
+        {
+            return false;
+        }
+
+        if (!trimmed[..keyword.Length].Equals(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (trimmed.Length > keyword.Length && !char.IsWhiteSpace(trimmed[keyword.Length]))
+        {
+            return false;
+        }
+
+        span = trimmed[keyword.Length..];
+        return true;
+    }
+
     public static IReadOnlyList<string> ExtractParameterNames(string sql)
     {
         if (string.IsNullOrWhiteSpace(sql))
+        {
+            return Array.Empty<string>();
+        }
+
+        if (IsCreateOrAlterRoutineStatement(sql))
         {
             return Array.Empty<string>();
         }
