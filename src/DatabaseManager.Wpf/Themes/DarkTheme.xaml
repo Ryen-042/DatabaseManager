@@ -27,4 +27,10 @@
     <SolidColorBrush x:Key="SelectionBrush" Color="#FF1F5F8A" />
     <SolidColorBrush x:Key="CurrentCellBrush" Color="#FF2274A8" />
     <SolidColorBrush x:Key="HoverRowBrush" Color="#FF223142" />
+    <SolidColorBrush x:Key="ToastInfoBrush" Color="#FF1E3A52" />
+    <SolidColorBrush x:Key="ToastSuccessBrush" Color="#FF1B4430" />
+    <SolidColorBrush x:Key="ToastWarningBrush" Color="#FF4D3B14" />
+    <SolidColorBrush x:Key="ToastErrorBrush" Color="#FF4A2323" />
+    <SolidColorBrush x:Key="ToastForegroundBrush" Color="#FFF2F5FA" />
+    <SolidColorBrush x:Key="CommandPaletteOverlayBrush" Color="#99000000" />
 </ResourceDictionary>

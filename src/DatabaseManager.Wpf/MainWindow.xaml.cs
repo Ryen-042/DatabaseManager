@@ -17,8 +17,11 @@ using DatabaseManager.Core.Models;
 using DatabaseManager.Core.Models.Schema;
 using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
+using CommunityToolkit.Mvvm.Input;
+using DatabaseManager.Wpf.Commands;
 using DatabaseManager.Wpf.Editors;
 using DatabaseManager.Wpf.SqlSuggestions;
+using DatabaseManager.Wpf.ViewModels;
 using DatabaseManager.Wpf.Windows;
 using Microsoft.Win32;
 
@@ -44,6 +47,10 @@ public partial class MainWindow : Window
     private readonly IQueryAssistantService _queryAssistantService = new SqlQueryAssistantService();
     private readonly IStoredProcedureExecutionService _storedProcedureExecutionService = new StoredProcedureExecutionService();
     private static readonly IValueConverter ResultsValueConverter = new ResultValueConverter();
+
+    private readonly ICommandRegistry _commandRegistry = new AppCommandRegistry();
+    private readonly IToastService _toastService;
+    public MainWindowViewModel ViewModel { get; }
 
     private DataTable? _currentDataTable;
     private bool _currentFullOutputMode;
@@ -89,6 +96,12 @@ public partial class MainWindow : Window
         _editRowsSqlEditor = new AvalonEditSqlTextEditorAdapter(EditQueryTextBox);
         SqlEditorSupport.Configure(QueryTextBox);
         SqlEditorSupport.Configure(EditQueryTextBox);
+        _toastService = new ToastService(Dispatcher);
+        ToastHostControl.Toasts = _toastService.Toasts;
+        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged);
+        DataContext = ViewModel;
+        RegisterCommands();
+        BuildInputBindings();
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
     }
@@ -98,13 +111,13 @@ public partial class MainWindow : Window
 
     private void MainWindow_SourceInitialized(object? sender, EventArgs e)
     {
-        ApplyTitleBarTheme(DarkModeCheckBox.IsChecked == true);
+        ApplyTitleBarTheme(ViewModel.IsDarkMode);
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        App.ApplyTheme(DarkModeCheckBox.IsChecked == true);
-        ApplyTitleBarTheme(DarkModeCheckBox.IsChecked == true);
+        App.ApplyTheme(ViewModel.IsDarkMode);
+        ApplyTitleBarTheme(ViewModel.IsDarkMode);
         await LoadTemplatesAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
         OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
@@ -129,102 +142,131 @@ public partial class MainWindow : Window
         UpdateSchemaDetailsPanelByAssistantTab();
     }
 
-    private async void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void OnSchemaAssistantVisibleChanged(bool visible)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control)
+        if (visible)
         {
-            return;
+            SchemaAssistantColumn.Width = _schemaPaneExpandedWidth;
+            SchemaAssistantSplitterColumn.Width = new GridLength(4);
+            SchemaAssistantPanel.Visibility = Visibility.Visible;
+            SchemaPanelSplitter.Visibility = Visibility.Visible;
         }
-
-        if (TryGetOutputTabShortcutIndex(e.Key, out var tabIndex))
+        else
         {
-            OutputTabControl.SelectedIndex = tabIndex;
-            e.Handled = true;
-            return;
-        }
-
-        if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
-        {
-            if (e.Key == Key.R)
-            {
-                await RefreshEditRowsAsync();
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.S)
-            {
-                await SaveRowChangesAsync();
-                e.Handled = true;
-                return;
-            }
-        }
-
-        if (e.Key == Key.E)
-        {
-            if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
-            {
-                await RefreshEditRowsAsync();
-            }
-            else
-            {
-                RunQueryButton_Click(RunQueryButton, new RoutedEventArgs());
-            }
-
-            e.Handled = true;
-            return;
-        }
-
-        if (e.Key == Key.Q)
-        {
-            CancelButton_Click(CancelButton, new RoutedEventArgs());
-            e.Handled = true;
+            SchemaAssistantColumn.Width = new GridLength(0);
+            SchemaAssistantSplitterColumn.Width = new GridLength(0);
+            SchemaAssistantPanel.Visibility = Visibility.Collapsed;
+            SchemaPanelSplitter.Visibility = Visibility.Collapsed;
         }
     }
 
-    private static bool TryGetOutputTabShortcutIndex(Key key, out int tabIndex)
+    private void OnDarkModeChanged(bool isDarkMode)
     {
-        tabIndex = key switch
-        {
-            Key.D1 or Key.NumPad1 => 0,
-            Key.D2 or Key.NumPad2 => 1,
-            Key.D3 or Key.NumPad3 => 2,
-            Key.D4 or Key.NumPad4 => 3,
-            Key.D5 or Key.NumPad5 => 4,
-            _ => -1
-        };
-
-        return tabIndex >= 0;
-    }
-
-    private void SchemaPaneToggleButton_Checked(object sender, RoutedEventArgs e)
-    {
-        SchemaAssistantColumn.Width = _schemaPaneExpandedWidth;
-        SchemaAssistantSplitterColumn.Width = new GridLength(6);
-        SchemaAssistantPanel.Visibility = Visibility.Visible;
-        SchemaPanelSplitter.Visibility = Visibility.Visible;
-    }
-
-    private void SchemaPaneToggleButton_Unchecked(object sender, RoutedEventArgs e)
-    {
-        SchemaAssistantColumn.Width = new GridLength(0);
-        SchemaAssistantSplitterColumn.Width = new GridLength(0);
-        SchemaAssistantPanel.Visibility = Visibility.Collapsed;
-        SchemaPanelSplitter.Visibility = Visibility.Collapsed;
-    }
-
-    private void DarkModeCheckBox_Checked(object sender, RoutedEventArgs e)
-    {
-        App.ApplyTheme(true);
-        ApplyTitleBarTheme(true);
+        App.ApplyTheme(isDarkMode);
+        ApplyTitleBarTheme(isDarkMode);
         ApplyEditRowsCornerButtonStyle();
     }
 
-    private void DarkModeCheckBox_Unchecked(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Registers every app-level command once, shared by the top menu, the command palette,
+    /// the keyboard shortcuts panel, and (via <see cref="BuildInputBindings"/>) the window's
+    /// InputBindings - see CLAUDE.md / the command-registry design note. Contextual behavior
+    /// that used to live in the old MainWindow_PreviewKeyDown switch (e.g. Ctrl+R/S only
+    /// applying while the Edit Rows tab is active) is preserved by checking
+    /// OutputTabControl.SelectedIndex inside the command body itself, exactly like the
+    /// original imperative code did.
+    /// </summary>
+    private void RegisterCommands()
     {
-        App.ApplyTheme(false);
-        ApplyTitleBarTheme(false);
-        ApplyEditRowsCornerButtonStyle();
+        void Reg(string id, string displayName, string category, KeyGesture? gesture, ICommand command, string? iconKey = null, params string[] keywords)
+        {
+            _commandRegistry.Register(new AppCommandDescriptor
+            {
+                Id = id,
+                DisplayName = displayName,
+                Category = category,
+                IconKey = iconKey,
+                Gesture = gesture,
+                Command = command,
+                Keywords = keywords
+            });
+        }
+
+        void RegisterTabSwitch(string id, string displayName, Key key, int tabIndex)
+        {
+            Reg(id, displayName, "View", new KeyGesture(key, ModifierKeys.Control),
+                new RelayCommand(() => OutputTabControl.SelectedIndex = tabIndex), "Icon.Table");
+        }
+
+        Reg("connection.connect", "Connect", "Connection", null,
+            new AsyncRelayCommand(() => ConnectToDatabaseAsync(triggeredOnStartup: false)), "Icon.Power");
+
+        Reg("query.run", "Run Query", "Query", new KeyGesture(Key.E, ModifierKeys.Control),
+            new RelayCommand(() =>
+            {
+                if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
+                {
+                    _ = RefreshEditRowsAsync();
+                }
+                else
+                {
+                    RunQueryButton_Click(RunQueryButton, new RoutedEventArgs());
+                }
+            }), "Icon.Run");
+
+        Reg("query.cancel", "Cancel Execution", "Query", new KeyGesture(Key.Q, ModifierKeys.Control),
+            new RelayCommand(() => CancelButton_Click(CancelButton, new RoutedEventArgs())), "Icon.Stop");
+
+        Reg("editRows.refresh", "Refresh Edit Rows", "Edit Rows", new KeyGesture(Key.R, ModifierKeys.Control),
+            new AsyncRelayCommand(() => OutputTabControl.SelectedIndex == OutputEditRowsTabIndex
+                ? RefreshEditRowsAsync()
+                : Task.CompletedTask), "Icon.Refresh");
+
+        Reg("editRows.save", "Save Row Changes", "Edit Rows", new KeyGesture(Key.S, ModifierKeys.Control),
+            new AsyncRelayCommand(() => OutputTabControl.SelectedIndex == OutputEditRowsTabIndex
+                ? SaveRowChangesAsync()
+                : Task.CompletedTask), "Icon.Save");
+
+        RegisterTabSwitch("view.switchEditRows", "Switch to Edit Rows", Key.D1, OutputEditRowsTabIndex);
+        RegisterTabSwitch("view.switchSqlEditor", "Switch to SQL Editor", Key.D2, OutputSqlEditorTabIndex);
+        RegisterTabSwitch("view.switchSchema", "Switch to Schema", Key.D3, OutputSchemaTabIndex);
+        RegisterTabSwitch("view.switchResults", "Switch to Results", Key.D4, OutputResultsTabIndex);
+        RegisterTabSwitch("view.switchProcedureRunner", "Switch to Procedure Runner", Key.D5, OutputProcedureRunnerTabIndex);
+
+        Reg("view.toggleDarkMode", "Toggle Dark Mode", "View", null,
+            new RelayCommand(() => ViewModel.IsDarkMode = !ViewModel.IsDarkMode), "Icon.Moon");
+
+        Reg("view.toggleObjectExplorer", "Toggle Object Explorer", "View", null,
+            new RelayCommand(() => ViewModel.IsSchemaAssistantVisible = !ViewModel.IsSchemaAssistantVisible), "Icon.Sidebar");
+
+        Reg("view.openCommandPalette", "Command Palette", "View", new KeyGesture(Key.P, ModifierKeys.Control | ModifierKeys.Shift),
+            new RelayCommand(OpenCommandPalette), "Icon.Palette");
+
+        Reg("view.showShortcuts", "Keyboard Shortcuts", "View", new KeyGesture(Key.OemQuestion, ModifierKeys.Control),
+            new RelayCommand(OpenShortcutsHelp), "Icon.Keyboard", "help");
+    }
+
+    private void BuildInputBindings()
+    {
+        foreach (var descriptor in _commandRegistry.Commands)
+        {
+            if (descriptor.Gesture is not null)
+            {
+                InputBindings.Add(new KeyBinding(descriptor.Command, descriptor.Gesture));
+            }
+        }
+    }
+
+    private void OpenCommandPalette()
+    {
+        var palette = new CommandPaletteWindow(_commandRegistry.Commands) { Owner = this };
+        palette.ShowDialog();
+    }
+
+    private void OpenShortcutsHelp()
+    {
+        var help = new ShortcutsHelpWindow(_commandRegistry.Commands) { Owner = this };
+        help.ShowDialog();
     }
 
     private void ApplyTitleBarTheme(bool darkMode)
@@ -289,6 +331,7 @@ public partial class MainWindow : Window
         {
             SetStatus($"Connection failed: {result.ErrorMessage}");
             ConnectionStatusIndicator.Fill = (Brush)FindResource("DangerBrush");
+            _toastService.Show($"Connection failed: {result.ErrorMessage}", ToastKind.Error);
         }
 
         SetExecutionState(false);
@@ -1439,6 +1482,7 @@ public partial class MainWindow : Window
         if (!result.IsSuccess)
         {
             SetStatus($"{operationName} failed after {result.Duration.TotalSeconds:F2}s: {result.ErrorMessage}");
+            _toastService.Show($"{operationName} failed: {result.ErrorMessage}", ToastKind.Error);
             return;
         }
 

@@ -4,6 +4,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
+    xmlns:controls="clr-namespace:DatabaseManager.Wpf.Controls"
         mc:Ignorable="d"
         Title="Database Manager"
         Height="860"
@@ -12,17 +13,19 @@
         MinWidth="1200"
         WindowStartupLocation="CenterScreen"
         WindowState="Maximized"
-        PreviewKeyDown="MainWindow_PreviewKeyDown"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
     <Grid Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="1">
+        <controls:AppMenu Grid.Row="0" CommandRegistry="{Binding CommandRegistry}" />
+
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SchemaAssistantColumn" Width="260" />
                 <ColumnDefinition x:Name="SchemaAssistantSplitterColumn" Width="4" />
@@ -557,7 +560,7 @@
             </Grid>
         </Grid>
 
-        <Border Grid.Row="0"
+        <Border Grid.Row="1"
                 Padding="14,6"
                 BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource BorderBrush}"
@@ -572,10 +575,8 @@
                               Style="{StaticResource IconToggleButtonStyle}"
                               VerticalAlignment="Center"
                               Margin="0,0,4,0"
-                              IsChecked="True"
-                              ToolTip="Show/hide Object Explorer"
-                              Checked="SchemaPaneToggleButton_Checked"
-                              Unchecked="SchemaPaneToggleButton_Unchecked">
+                              IsChecked="{Binding IsSchemaAssistantVisible, Mode=TwoWay}"
+                              ToolTip="Show/hide Object Explorer">
                         <Path Data="{StaticResource Icon.Sidebar}"
                               Width="16"
                               Height="16"
@@ -588,10 +589,8 @@
                               Style="{StaticResource IconToggleButtonStyle}"
                               VerticalAlignment="Center"
                               Margin="0,0,4,0"
-                              IsChecked="True"
-                              ToolTip="Toggle dark/light theme"
-                              Checked="DarkModeCheckBox_Checked"
-                              Unchecked="DarkModeCheckBox_Unchecked">
+                              IsChecked="{Binding IsDarkMode, Mode=TwoWay}"
+                              ToolTip="Toggle dark/light theme">
                         <Grid>
                             <Path Data="{StaticResource Icon.Moon}"
                                   Width="15"
@@ -720,7 +719,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Padding="14,4"
                 BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource BorderBrush}"
@@ -785,5 +784,7 @@
                          MouseDoubleClick="SqlSuggestionListBox_MouseDoubleClick" />
             </Border>
         </Popup>
+
+        <controls:ToastHost x:Name="ToastHostControl" Grid.Row="0" Grid.RowSpan="4" />
     </Grid>
 </Window>

@@ -1,0 +1,93 @@
+<UserControl x:Class="DatabaseManager.Wpf.Controls.ToastHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:DatabaseManager.Wpf.ViewModels"
+             Focusable="False"
+             IsHitTestVisible="True">
+    <Grid Background="{x:Null}">
+        <ItemsControl x:Name="ToastItemsControl"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Bottom"
+                      Margin="0,0,16,16">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Vertical" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:ToastNotificationViewModel}">
+                    <Border x:Name="ToastBorder"
+                            Margin="0,6,0,0"
+                            MinWidth="280"
+                            MaxWidth="420"
+                            Padding="12,10"
+                            CornerRadius="4"
+                            BorderThickness="1"
+                            Background="{DynamicResource ToastInfoBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.35" Color="#FF000000" />
+                        </Border.Effect>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Path x:Name="ToastIcon"
+                                  Grid.Column="0"
+                                  Width="16"
+                                  Height="16"
+                                  Margin="0,1,10,0"
+                                  Stretch="Uniform"
+                                  VerticalAlignment="Top"
+                                  Data="{StaticResource Icon.Info}"
+                                  Stroke="{DynamicResource ToastForegroundBrush}"
+                                  StrokeThickness="1.6"
+                                  StrokeLineJoin="Round" />
+
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Message}"
+                                       Foreground="{DynamicResource ToastForegroundBrush}"
+                                       FontSize="12.5"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center" />
+
+                            <Button Grid.Column="2"
+                                    Command="{Binding DismissCommand}"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Margin="8,0,0,0"
+                                    MinWidth="20"
+                                    MinHeight="20"
+                                    Padding="2"
+                                    VerticalAlignment="Top"
+                                    ToolTip="Dismiss">
+                                <Path Data="{StaticResource Icon.Close}"
+                                      Width="10"
+                                      Height="10"
+                                      Stretch="Uniform"
+                                      Stroke="{DynamicResource ToastForegroundBrush}"
+                                      StrokeThickness="1.6" />
+                            </Button>
+                        </Grid>
+                    </Border>
+                    <DataTemplate.Triggers>
+                        <DataTrigger Binding="{Binding Kind}" Value="Success">
+                            <Setter TargetName="ToastBorder" Property="Background" Value="{DynamicResource ToastSuccessBrush}" />
+                            <Setter TargetName="ToastIcon" Property="Data" Value="{StaticResource Icon.Success}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="Warning">
+                            <Setter TargetName="ToastBorder" Property="Background" Value="{DynamicResource ToastWarningBrush}" />
+                            <Setter TargetName="ToastIcon" Property="Data" Value="{StaticResource Icon.Warning}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="Error">
+                            <Setter TargetName="ToastBorder" Property="Background" Value="{DynamicResource ToastErrorBrush}" />
+                            <Setter TargetName="ToastIcon" Property="Data" Value="{StaticResource Icon.Error}" />
+                        </DataTrigger>
+                    </DataTemplate.Triggers>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+</UserControl>
