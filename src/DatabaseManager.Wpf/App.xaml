@@ -119,8 +119,8 @@
                     <Setter.Value>
                         <ControlTemplate TargetType="Thumb">
                             <Border x:Name="ThumbBorder"
-                                    Margin="1"
-                                    CornerRadius="4"
+                                    Margin="2"
+                                    CornerRadius="3"
                                     Background="{DynamicResource ScrollBarThumbBrush}" />
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -136,12 +136,12 @@
             </Style>
 
             <Style TargetType="ScrollBar">
-                <Setter Property="Background" Value="{DynamicResource ScrollBarTrackBrush}" />
-                <Setter Property="Width" Value="11" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Width" Value="8" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ScrollBar">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="5">
+                            <Border Background="{TemplateBinding Background}">
                                 <primitives:Track x:Name="PART_Track">
                                     <primitives:Track.DecreaseRepeatButton>
                                         <RepeatButton Style="{StaticResource ScrollBarPageButtonStyle}" />
@@ -157,12 +157,12 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="Orientation" Value="Horizontal">
                                     <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
-                                    <Setter Property="Height" Value="11" />
+                                    <Setter Property="Height" Value="8" />
                                     <Setter Property="Width" Value="Auto" />
                                 </Trigger>
                                 <Trigger Property="Orientation" Value="Vertical">
                                     <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="True" />
-                                    <Setter Property="Width" Value="11" />
+                                    <Setter Property="Width" Value="8" />
                                     <Setter Property="Height" Value="Auto" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
@@ -396,6 +396,84 @@
                 <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderBrush}" />
                 <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource BorderBrush}" />
                 <Setter Property="FlowDirection" Value="LeftToRight" />
+                <!--
+                    Re-templates just the DataGrid's outer chrome (border + scroll viewport) so the
+                    horizontal ScrollBar isn't offset by a blank leading column the size of the row-header
+                    width - WPF's stock DataGrid template reserves that gap to visually align the
+                    horizontal scrollbar under the data columns only, but against this flat theme it just
+                    reads as dead space. Row/cell rendering, selection, and editing are untouched - this
+                    only swaps the header/scrollbar/select-all layout scaffolding, which is the same set
+                    of named parts (PART_ColumnHeadersPresenter, PART_ScrollContentPresenter,
+                    PART_VerticalScrollBar, PART_HorizontalScrollBar) the framework's own default
+                    template uses.
+                -->
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="DataGrid">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    SnapsToDevicePixels="True">
+                                <ScrollViewer x:Name="DG_ScrollViewer" Focusable="False">
+                                    <ScrollViewer.Template>
+                                        <ControlTemplate TargetType="ScrollViewer">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="*" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+
+                                                <Button Command="{x:Static DataGrid.SelectAllCommand}"
+                                                        Focusable="False"
+                                                        Width="{Binding CellsPanelHorizontalOffset, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"
+                                                        Style="{DynamicResource {ComponentResourceKey TypeInTargetAssembly={x:Type DataGrid}, ResourceId=DataGridSelectAllButtonStyle}}"
+                                                        Visibility="{Binding HeadersVisibility, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Converter={x:Static DataGrid.HeadersVisibilityConverter}, ConverterParameter={x:Static DataGridHeadersVisibility.All}}" />
+
+                                                <DataGridColumnHeadersPresenter x:Name="PART_ColumnHeadersPresenter"
+                                                        Grid.Column="1"
+                                                        Visibility="{Binding HeadersVisibility, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Converter={x:Static DataGrid.HeadersVisibilityConverter}, ConverterParameter={x:Static DataGridHeadersVisibility.Column}}" />
+
+                                                <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                        Grid.ColumnSpan="2"
+                                                        Grid.Row="1"
+                                                        CanContentScroll="{TemplateBinding CanContentScroll}" />
+
+                                                <ScrollBar x:Name="PART_VerticalScrollBar"
+                                                        Grid.Column="2"
+                                                        Grid.Row="1"
+                                                        Orientation="Vertical"
+                                                        Maximum="{TemplateBinding ScrollableHeight}"
+                                                        ViewportSize="{TemplateBinding ViewportHeight}"
+                                                        Value="{Binding VerticalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                        Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+
+                                                <ScrollBar x:Name="PART_HorizontalScrollBar"
+                                                        Grid.Column="1"
+                                                        Grid.Row="2"
+                                                        Orientation="Horizontal"
+                                                        Maximum="{TemplateBinding ScrollableWidth}"
+                                                        ViewportSize="{TemplateBinding ViewportWidth}"
+                                                        Value="{Binding HorizontalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                        Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}" />
+
+                                                <Border Grid.Column="2"
+                                                        Grid.Row="2"
+                                                        Background="{DynamicResource PanelBrush}" />
+                                            </Grid>
+                                        </ControlTemplate>
+                                    </ScrollViewer.Template>
+                                    <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                </ScrollViewer>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style TargetType="DataGridRowHeader">
