@@ -119,8 +119,8 @@
                     <Setter.Value>
                         <ControlTemplate TargetType="Thumb">
                             <Border x:Name="ThumbBorder"
-                                    Margin="2"
-                                    CornerRadius="3"
+                                    Margin="1"
+                                    CornerRadius="2"
                                     Background="{DynamicResource ScrollBarThumbBrush}" />
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -137,7 +137,7 @@
 
             <Style TargetType="ScrollBar">
                 <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Width" Value="8" />
+                <Setter Property="Width" Value="6" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ScrollBar">
@@ -157,12 +157,12 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="Orientation" Value="Horizontal">
                                     <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
-                                    <Setter Property="Height" Value="8" />
+                                    <Setter Property="Height" Value="6" />
                                     <Setter Property="Width" Value="Auto" />
                                 </Trigger>
                                 <Trigger Property="Orientation" Value="Vertical">
                                     <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="True" />
-                                    <Setter Property="Width" Value="8" />
+                                    <Setter Property="Width" Value="6" />
                                     <Setter Property="Height" Value="Auto" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
@@ -454,7 +454,8 @@
                                                         Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
 
                                                 <ScrollBar x:Name="PART_HorizontalScrollBar"
-                                                        Grid.Column="1"
+                                                        Grid.Column="0"
+                                                        Grid.ColumnSpan="2"
                                                         Grid.Row="2"
                                                         Orientation="Horizontal"
                                                         Maximum="{TemplateBinding ScrollableWidth}"
