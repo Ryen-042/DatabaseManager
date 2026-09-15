@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <!-- Shared spacing/typography tokens, applied incrementally as panels are touched. -->
+    <Thickness x:Key="Spacing.XSmall">4</Thickness>
+    <Thickness x:Key="Spacing.Small">8</Thickness>
+    <Thickness x:Key="Spacing.Medium">12</Thickness>
+    <Thickness x:Key="Spacing.Large">16</Thickness>
+
+    <sys:Double x:Key="FontSize.Caption">11</sys:Double>
+    <sys:Double x:Key="FontSize.Body">13</sys:Double>
+    <sys:Double x:Key="FontSize.Heading">14</sys:Double>
+
+    <CornerRadius x:Key="CornerRadius.Standard">6</CornerRadius>
+    <CornerRadius x:Key="CornerRadius.Panel">8</CornerRadius>
+</ResourceDictionary>

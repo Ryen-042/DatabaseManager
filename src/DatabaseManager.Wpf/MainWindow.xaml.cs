@@ -19,6 +19,7 @@ using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
 using DatabaseManager.Wpf.Editors;
 using DatabaseManager.Wpf.SqlSuggestions;
+using DatabaseManager.Wpf.Windows;
 using Microsoft.Win32;
 
 namespace DatabaseManager.Wpf;
@@ -281,11 +282,13 @@ public partial class MainWindow : Window
         if (result.IsSuccess)
         {
             SetStatus("Connected successfully.");
+            ConnectionStatusIndicator.Fill = (Brush)FindResource("AccentBrush");
             await LoadSchemaMetadataAsync(connectionString);
         }
         else
         {
             SetStatus($"Connection failed: {result.ErrorMessage}");
+            ConnectionStatusIndicator.Fill = (Brush)FindResource("DangerBrush");
         }
 
         SetExecutionState(false);
@@ -929,104 +932,7 @@ public partial class MainWindow : Window
         IReadOnlyList<ColumnSchemaInfo> availableColumns,
         out IReadOnlyList<string> selectedColumns)
     {
-        var rows = new ObservableCollection<DeleteColumnSelectionRow>(
-            availableColumns
-                .OrderBy(c => c.OrdinalPosition)
-                .Select(c => new DeleteColumnSelectionRow
-                {
-                    ColumnName = c.ColumnName,
-                    DataType = c.DataType,
-                    IsSelected = c.IsPrimaryKey
-                }));
-
-        var dialog = new Window
-        {
-            Title = "Select Columns For Delete Filter",
-            Owner = this,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Width = 620,
-            Height = 480,
-            MinWidth = 560,
-            MinHeight = 360,
-            ResizeMode = ResizeMode.CanResize,
-            ShowInTaskbar = false,
-            Background = (Brush)FindResource("SurfaceBrush"),
-            Foreground = (Brush)FindResource("TextPrimaryBrush")
-        };
-
-        var root = new Grid { Margin = new Thickness(14) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var instructions = new TextBlock
-        {
-            Text = "Select columns to build WHERE predicates for each selected row.",
-            Margin = new Thickness(0, 0, 0, 8),
-            FontWeight = FontWeights.SemiBold
-        };
-        Grid.SetRow(instructions, 0);
-        root.Children.Add(instructions);
-
-        var dataGrid = new DataGrid
-        {
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            HeadersVisibility = DataGridHeadersVisibility.All,
-            ItemsSource = rows
-        };
-        dataGrid.Columns.Add(new DataGridCheckBoxColumn
-        {
-            Header = "Use",
-            Binding = new Binding(nameof(DeleteColumnSelectionRow.IsSelected)),
-            Width = new DataGridLength(70)
-        });
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Column",
-            Binding = new Binding(nameof(DeleteColumnSelectionRow.ColumnName)),
-            IsReadOnly = true,
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
-        });
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Data Type",
-            Binding = new Binding(nameof(DeleteColumnSelectionRow.DataType)),
-            IsReadOnly = true,
-            Width = new DataGridLength(150)
-        });
-        Grid.SetRow(dataGrid, 1);
-        root.Children.Add(dataGrid);
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 10, 0, 0)
-        };
-
-        var cancelButton = new Button
-        {
-            Content = "Cancel",
-            MinWidth = 90,
-            Margin = new Thickness(0, 0, 8, 0),
-            IsCancel = true
-        };
-        var applyButton = new Button
-        {
-            Content = "Apply",
-            MinWidth = 90,
-            IsDefault = true
-        };
-        applyButton.Click += (_, _) => dialog.DialogResult = true;
-
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(applyButton);
-        Grid.SetRow(buttons, 2);
-        root.Children.Add(buttons);
-
-        dialog.Content = root;
+        var dialog = new DeleteColumnsSelectionWindow(availableColumns) { Owner = this };
 
         if (dialog.ShowDialog() != true)
         {
@@ -1034,11 +940,7 @@ public partial class MainWindow : Window
             return false;
         }
 
-        selectedColumns = rows
-            .Where(row => row.IsSelected)
-            .Select(row => row.ColumnName)
-            .ToList();
-
+        selectedColumns = dialog.SelectedColumns;
         return true;
     }
 
@@ -1850,6 +1752,7 @@ public partial class MainWindow : Window
         SaveRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
         DiscardRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
         DeleteRowMenuItem.IsEnabled = _isEditMode && !isExecuting;
+        StatusProgressBar.Visibility = isExecuting ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void SetStatus(string message)
@@ -3226,102 +3129,7 @@ public partial class MainWindow : Window
         IReadOnlyList<string> parameterNames,
         out IReadOnlyList<QueryParameterValue> parameters)
     {
-        var rows = new ObservableCollection<QueryParameterEditorRow>(
-            parameterNames.Select(name => new QueryParameterEditorRow
-            {
-                ParameterName = name,
-                Value = string.Empty,
-                SendAsNull = false
-            }));
-
-        var dialog = new Window
-        {
-            Title = "Query Parameters",
-            Owner = this,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Width = 620,
-            Height = 420,
-            MinWidth = 560,
-            MinHeight = 340,
-            ResizeMode = ResizeMode.CanResize,
-            ShowInTaskbar = false,
-            Background = (Brush)FindResource("SurfaceBrush"),
-            Foreground = (Brush)FindResource("TextPrimaryBrush")
-        };
-
-        var root = new Grid
-        {
-            Margin = new Thickness(14)
-        };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var instructions = new TextBlock
-        {
-            Text = "Enter values for SQL variables before execution.",
-            Margin = new Thickness(0, 0, 0, 8),
-            FontWeight = FontWeights.SemiBold
-        };
-        Grid.SetRow(instructions, 0);
-        root.Children.Add(instructions);
-
-        var dataGrid = new DataGrid
-        {
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            HeadersVisibility = DataGridHeadersVisibility.All,
-            ItemsSource = rows
-        };
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Variable",
-            Binding = new Binding(nameof(QueryParameterEditorRow.ParameterName)),
-            IsReadOnly = true,
-            Width = new DataGridLength(180)
-        });
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Value",
-            Binding = new Binding(nameof(QueryParameterEditorRow.Value)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
-        });
-        dataGrid.Columns.Add(new DataGridCheckBoxColumn
-        {
-            Header = "NULL",
-            Binding = new Binding(nameof(QueryParameterEditorRow.SendAsNull)),
-            Width = new DataGridLength(80)
-        });
-        Grid.SetRow(dataGrid, 1);
-        root.Children.Add(dataGrid);
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 10, 0, 0)
-        };
-        var cancelButton = new Button
-        {
-            Content = "Cancel",
-            MinWidth = 90,
-            Margin = new Thickness(0, 0, 8, 0),
-            IsCancel = true
-        };
-        var executeButton = new Button
-        {
-            Content = "Execute",
-            MinWidth = 90,
-            IsDefault = true
-        };
-        executeButton.Click += (_, _) => dialog.DialogResult = true;
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(executeButton);
-        Grid.SetRow(buttons, 2);
-        root.Children.Add(buttons);
-
-        dialog.Content = root;
+        var dialog = new QueryParametersWindow(parameterNames) { Owner = this };
 
         if (dialog.ShowDialog() != true)
         {
@@ -3329,14 +3137,7 @@ public partial class MainWindow : Window
             return false;
         }
 
-        parameters = rows
-            .Select(row => new QueryParameterValue
-            {
-                Name = row.ParameterName,
-                Value = row.SendAsNull ? null : row.Value
-            })
-            .ToList();
-
+        parameters = dialog.Parameters;
         return true;
     }
 
@@ -3351,23 +3152,5 @@ public partial class MainWindow : Window
         public bool SendAsNull { get; set; }
 
         public bool IsOutput { get; init; }
-    }
-
-    private sealed class DeleteColumnSelectionRow
-    {
-        public required string ColumnName { get; init; }
-
-        public required string DataType { get; init; }
-
-        public bool IsSelected { get; set; }
-    }
-
-    private sealed class QueryParameterEditorRow
-    {
-        public required string ParameterName { get; init; }
-
-        public string? Value { get; set; }
-
-        public bool SendAsNull { get; set; }
     }
 }
