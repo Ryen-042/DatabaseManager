@@ -15,38 +15,40 @@
         PreviewKeyDown="MainWindow_PreviewKeyDown"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
-    <Grid Margin="16" Background="{DynamicResource WindowBackgroundBrush}">
+    <Grid Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0">
+        <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SchemaAssistantColumn" Width="330" />
-                <ColumnDefinition x:Name="SchemaAssistantSplitterColumn" Width="6" />
+                <ColumnDefinition x:Name="SchemaAssistantColumn" Width="260" />
+                <ColumnDefinition x:Name="SchemaAssistantSplitterColumn" Width="4" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <Border x:Name="SchemaAssistantPanel"
                     Grid.Column="0"
-                    MinWidth="260"
-                    CornerRadius="8"
-                    BorderThickness="1"
+                    MinWidth="220"
+                    BorderThickness="0,0,1,0"
                     BorderBrush="{DynamicResource BorderBrush}"
                     Background="{DynamicResource PanelBrush}">
-                <Grid Margin="12">
+                <Grid Margin="10,8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Schema Assistant" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Text="SCHEMA ASSISTANT"
+                               FontSize="10.5"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
 
-                    <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,10,0,0" SelectionChanged="SchemaAssistantTabControl_SelectionChanged">
+                    <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,8,0,0" SelectionChanged="SchemaAssistantTabControl_SelectionChanged">
                         <TabItem Header="Tables">
-                            <Grid Margin="8">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -82,8 +84,8 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="Stored Procedures">
-                            <Grid Margin="8">
+                        <TabItem Header="Procedures">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -116,8 +118,8 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="Query Templates">
-                            <Grid Margin="8">
+                        <TabItem Header="Templates">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -164,26 +166,20 @@
 
             <GridSplitter x:Name="SchemaPanelSplitter"
                           Grid.Column="1"
-                          Width="6"
+                          Width="4"
                           HorizontalAlignment="Stretch"
                           ResizeDirection="Columns"
                           ResizeBehavior="PreviousAndNext"
                           Background="Transparent" />
 
-            <Grid Grid.Column="2">
+            <Grid Grid.Column="2" Background="{DynamicResource SurfaceBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0"
-                        Padding="12"
-                        CornerRadius="8"
-                        BorderThickness="1"
-                        BorderBrush="{DynamicResource BorderBrush}"
-                        Background="{DynamicResource SurfaceBrush}">
-                    <TabControl x:Name="OutputTabControl">
+                <TabControl x:Name="OutputTabControl" Grid.Row="0">
                         <TabItem Header="Edit Rows">
-                            <Grid Margin="8">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
@@ -317,7 +313,7 @@
                         </TabItem>
 
                         <TabItem Header="SQL Editor">
-                            <Grid Margin="8">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -346,7 +342,7 @@
                         </TabItem>
 
                         <TabItem Header="Schema">
-                            <Grid Margin="8">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -471,7 +467,7 @@
                         </TabItem>
 
                         <TabItem Header="Results">
-                            <Grid Margin="8">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -508,7 +504,7 @@
                         </TabItem>
 
                         <TabItem Header="Procedure Runner">
-                            <Grid Margin="8">
+                            <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
@@ -557,16 +553,13 @@
                                 </DataGrid>
                             </Grid>
                         </TabItem>
-                    </TabControl>
-                </Border>
+                </TabControl>
             </Grid>
         </Grid>
 
-        <Border Grid.Row="1"
-                Margin="0,12,0,0"
-                Padding="12"
-                CornerRadius="8"
-                BorderThickness="1"
+        <Border Grid.Row="0"
+                Padding="14,6"
+                BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource BorderBrush}"
                 Background="{DynamicResource PanelBrush}">
             <DockPanel LastChildFill="True">
@@ -728,10 +721,10 @@
         </Border>
 
         <Border Grid.Row="2"
-                Margin="0,12,0,0"
-                CornerRadius="6"
-                Padding="10"
-                Background="{DynamicResource StatusBackgroundBrush}">
+                Padding="14,4"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource BorderBrush}"
+                Background="{DynamicResource PanelBrush}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -742,8 +735,8 @@
 
                 <Ellipse x:Name="ConnectionStatusIndicator"
                          Grid.Column="0"
-                         Width="8"
-                         Height="8"
+                         Width="7"
+                         Height="7"
                          Margin="0,0,8,0"
                          VerticalAlignment="Center"
                          Fill="{DynamicResource TextSecondaryBrush}" />
@@ -751,20 +744,22 @@
                 <TextBlock x:Name="StatusTextBlock"
                            Grid.Column="1"
                            VerticalAlignment="Center"
-                           Foreground="{DynamicResource StatusForegroundBrush}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            Text="Ready." />
 
                 <TextBlock x:Name="StatusDetailTextBlock"
                            Grid.Column="2"
                            Margin="10,0"
                            VerticalAlignment="Center"
-                           Foreground="{DynamicResource StatusForegroundBrush}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            Opacity="0.85" />
 
                 <ProgressBar x:Name="StatusProgressBar"
                              Grid.Column="3"
                              Width="90"
-                             Height="6"
+                             Height="4"
                              VerticalAlignment="Center"
                              IsIndeterminate="True"
                              Visibility="Collapsed" />

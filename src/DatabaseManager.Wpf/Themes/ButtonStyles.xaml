@@ -1,36 +1,44 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!--
-        Named button style hierarchy, self-contained (no BasedOn against App.xaml's implicit
-        Button style - a merged dictionary can't StaticResource-reference a key defined only
-        in the dictionary that merges it). The flat/rounded look mirrors App.xaml's Button
-        template exactly; only the color Setters differ per tier.
+        Slim, flat button style hierarchy. Each tier uses a distinct visual TREATMENT (not
+        just a different fill color) so actions stay distinguishable without adding visual
+        weight everywhere:
 
-        PrimaryButtonStyle    - accent fill; the one main action per view (Connect, Run,
-                                 Save Changes, Execute Procedure). Same look as the app's
-                                 unstyled default Button, named explicitly for call-site clarity.
-        SecondaryButtonStyle  - muted/outline; frequent-but-not-primary actions (Refresh,
-                                 Load, Export, Save Template).
-        DestructiveButtonStyle - danger-colored; actions that remove/discard data (Cancel
-                                 Execution, Discard Changes, Delete).
-        IconButtonStyle       - compact 30x30 icon-only button; toolbar toggles that carry
-                                 their label as a ToolTip instead of visible text.
+        PrimaryButtonStyle    - solid accent fill. The one main action per view (Connect,
+                                 Run, Save Changes, Execute Procedure). Always draws the eye.
+        SecondaryButtonStyle  - ghost: transparent until hovered, then a subtle fill. For
+                                 frequent-but-not-primary actions (Refresh, Load, Export,
+                                 Save Template) - keeps the UI from turning into a wall of
+                                 boxes.
+        DestructiveButtonStyle - outlined in the danger color, fills solid red only on
+                                 hover/press. Reads as "careful" without being a heavy red
+                                 block at rest (Cancel Execution, Discard Changes, Delete).
+        IconButtonStyle / IconToggleButtonStyle - compact icon-only controls (28x28), ghost
+                                 by default.
+
+        All tiers share slim metrics: MinHeight 26, Padding 10,4 - noticeably shorter than a
+        typical WPF default Button, by design (this is the "slim elements" pass).
     -->
 
-    <Style x:Key="ButtonStyles.BaseTemplate" TargetType="Button">
+    <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Padding" Value="12,7" />
-        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="26" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="ButtonBorder"
+                    <Border x:Name="Bd"
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="2"
+                            CornerRadius="3"
                             SnapsToDevicePixels="True">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
@@ -39,14 +47,14 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.92" />
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.88" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.82" />
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.76" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource MutedBrush}" />
-                            <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MutedBrush}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -55,31 +63,125 @@
         </Setter>
     </Style>
 
-    <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonStyles.BaseTemplate}">
-        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-    </Style>
-
-    <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonStyles.BaseTemplate}">
-        <Setter Property="Background" Value="{DynamicResource MutedBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-    </Style>
-
-    <Style x:Key="DestructiveButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonStyles.BaseTemplate}">
-        <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource DangerForegroundBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
-    </Style>
-
-    <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonStyles.BaseTemplate}">
+    <Style x:Key="SecondaryButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="3"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MutedBrush}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.8" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.6" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="DestructiveButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="3"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter x:Name="Cp"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource DangerBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource DangerForegroundBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.82" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.6" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="IconButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="6" />
-        <Setter Property="MinHeight" Value="30" />
-        <Setter Property="MinWidth" Value="30" />
+        <Setter Property="Padding" Value="5" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="3"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MutedBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!--
@@ -90,19 +192,18 @@
     -->
     <Style x:Key="IconToggleButtonStyle" TargetType="ToggleButton">
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="6" />
-        <Setter Property="MinHeight" Value="30" />
-        <Setter Property="MinWidth" Value="30" />
+        <Setter Property="Padding" Value="5" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
-                    <Border x:Name="ToggleBorder"
+                    <Border x:Name="Bd"
                             Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="4"
+                            CornerRadius="3"
                             SnapsToDevicePixels="True">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
@@ -111,14 +212,14 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource AccentBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentBrush}" />
                             <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="ToggleBorder" Property="Opacity" Value="0.85" />
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="ToggleBorder" Property="Opacity" Value="0.7" />
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.7" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
