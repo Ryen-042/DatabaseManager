@@ -1,0 +1,123 @@
+<UserControl x:Class="DatabaseManager.Wpf.Views.SchemaDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock FontWeight="SemiBold" Text="{Binding SchemaSummaryText}" />
+
+        <Grid Grid.Row="1" Margin="0,10,0,0">
+            <Grid Visibility="{Binding TableDetailsVisibility}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="2*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock FontWeight="SemiBold" Text="{Binding SelectedTableSummary}" />
+
+                <DataGrid Grid.Row="1"
+                          Margin="0,8,0,4"
+                          MinHeight="80"
+                          FlowDirection="LeftToRight"
+                          IsReadOnly="True"
+                          AutoGenerateColumns="True"
+                          HeadersVisibility="All"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          ItemsSource="{Binding SelectedColumns}"
+                          Loaded="DataGrid_Loaded"
+                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
+
+                <GridSplitter Grid.Row="2"
+                              Height="6"
+                              Margin="0,0,0,4"
+                              HorizontalAlignment="Stretch"
+                              ResizeDirection="Rows"
+                              ResizeBehavior="PreviousAndNext"
+                              Background="Transparent" />
+
+                <Grid Grid.Row="3">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Margin="0,0,0,6"
+                               FontWeight="SemiBold"
+                               Text="Table SQL Definition" />
+
+                    <TextBox Grid.Row="1"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             TextWrapping="NoWrap"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             Text="{Binding TableSqlDefinitionText, Mode=OneWay}" />
+                </Grid>
+            </Grid>
+
+            <Grid Visibility="{Binding ProcedureDetailsVisibility}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="2*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock FontWeight="SemiBold" Text="{Binding SelectedProcedureSummary}" />
+
+                <DataGrid Grid.Row="1"
+                          Margin="0,8,0,4"
+                          MinHeight="80"
+                          FlowDirection="LeftToRight"
+                          IsReadOnly="True"
+                          AutoGenerateColumns="True"
+                          HeadersVisibility="All"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          ItemsSource="{Binding SelectedProcedureParameters}"
+                          Loaded="DataGrid_Loaded"
+                          PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
+
+                <GridSplitter Grid.Row="2"
+                              Height="6"
+                              Margin="0,0,0,4"
+                              HorizontalAlignment="Stretch"
+                              ResizeDirection="Rows"
+                              ResizeBehavior="PreviousAndNext"
+                              Background="Transparent" />
+
+                <Grid Grid.Row="3">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Margin="0,0,0,6"
+                               FontWeight="SemiBold"
+                               Text="Procedure SQL Definition" />
+
+                    <TextBox Grid.Row="1"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             TextWrapping="NoWrap"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             Text="{Binding ProcedureSqlDefinitionText, Mode=OneWay}" />
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

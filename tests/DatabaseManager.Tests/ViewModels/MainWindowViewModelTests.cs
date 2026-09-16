@@ -1,5 +1,7 @@
 using DatabaseManager.Core.Services;
+using DatabaseManager.Core.Services.Schema;
 using DatabaseManager.Wpf.Commands;
+using DatabaseManager.Wpf.SqlSuggestions;
 using DatabaseManager.Wpf.ViewModels;
 
 namespace DatabaseManager.Tests.ViewModels;
@@ -13,10 +15,25 @@ public sealed class MainWindowViewModelTests
         confirmDelete: _ => true,
         setStatus: _ => { });
 
+    private static SchemaAssistantViewModel CreateSchemaAssistant() => new(
+        new SqlServerSchemaService(),
+        new SqlQueryAssistantService(),
+        new SqlCompletionCatalogService(),
+        getConnectionString: () => string.Empty,
+        onTableSelected: (_, _) => { },
+        onTableCleared: () => { },
+        onProcedureSelected: (_, _) => { },
+        onProcedureCleared: () => { },
+        onSchemaMetadataLoaded: (_, _, _) => { },
+        onScriptGenerated: (_, _) => { },
+        onOpenInRunnerRequested: (_, _) => { },
+        onCopyRequested: _ => Task.CompletedTask,
+        setStatus: _ => { });
+
     [Fact]
     public void Defaults_AreDarkModeAndSchemaAssistantVisible()
     {
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
 
         Assert.True(vm.IsDarkMode);
         Assert.True(vm.IsSchemaAssistantVisible);
@@ -26,7 +43,7 @@ public sealed class MainWindowViewModelTests
     public void SettingIsDarkMode_InvokesCallbackWithNewValue()
     {
         bool? observed = null;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), value => observed = value, _ => { }, CreateTemplatesPanel());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), value => observed = value, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
 
         vm.IsDarkMode = false;
 
@@ -37,7 +54,7 @@ public sealed class MainWindowViewModelTests
     public void SettingIsSchemaAssistantVisible_InvokesCallbackWithNewValue()
     {
         bool? observed = null;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, value => observed = value, CreateTemplatesPanel());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, value => observed = value, CreateTemplatesPanel(), CreateSchemaAssistant());
 
         vm.IsSchemaAssistantVisible = false;
 
@@ -48,7 +65,7 @@ public sealed class MainWindowViewModelTests
     public void SettingSameValue_DoesNotInvokeCallback()
     {
         var invocationCount = 0;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => invocationCount++, _ => { }, CreateTemplatesPanel());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => invocationCount++, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
 
         vm.IsDarkMode = true; // already the default value
 
@@ -59,7 +76,7 @@ public sealed class MainWindowViewModelTests
     public void CommandRegistry_IsExposedAsGiven()
     {
         var registry = new AppCommandRegistry();
-        var vm = new MainWindowViewModel(registry, _ => { }, _ => { }, CreateTemplatesPanel());
+        var vm = new MainWindowViewModel(registry, _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
 
         Assert.Same(registry, vm.CommandRegistry);
     }
@@ -68,8 +85,17 @@ public sealed class MainWindowViewModelTests
     public void TemplatesPanel_IsExposedAsGiven()
     {
         var templatesPanel = CreateTemplatesPanel();
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, templatesPanel);
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, templatesPanel, CreateSchemaAssistant());
 
         Assert.Same(templatesPanel, vm.TemplatesPanel);
+    }
+
+    [Fact]
+    public void SchemaAssistant_IsExposedAsGiven()
+    {
+        var schemaAssistant = CreateSchemaAssistant();
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), schemaAssistant);
+
+        Assert.Same(schemaAssistant, vm.SchemaAssistant);
     }
 }

@@ -50,76 +50,13 @@
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource TextSecondaryBrush}" />
 
-                    <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,8,0,0" SelectionChanged="SchemaAssistantTabControl_SelectionChanged">
+                    <TabControl x:Name="SchemaAssistantTabControl" Grid.Row="1" Margin="0,8,0,0" SelectedIndex="{Binding SchemaAssistant.SchemaAssistantTabIndex, Mode=TwoWay}">
                         <TabItem Header="Tables">
-                            <Grid Margin="10">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button Content="Refresh" Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Click="RefreshSchemaButton_Click" />
-                                    <TextBox x:Name="TableSearchTextBox"
-                                             Width="190"
-                                             VerticalContentAlignment="Center"
-                                             ToolTip="Filter tables"
-                                             TextChanged="TableSearchTextBox_TextChanged" />
-                                </StackPanel>
-
-                                <ListBox x:Name="TablesListBox"
-                                         Grid.Row="1"
-                                         MinHeight="260"
-                                         DisplayMemberPath="FullName"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         SelectionChanged="TablesListBox_SelectionChanged">
-                                    <ListBox.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="Generate SELECT" Click="GenerateSelectButton_Click" />
-                                            <MenuItem Header="Generate INSERT" Click="GenerateInsertButton_Click" />
-                                            <MenuItem Header="Generate UPDATE" Click="GenerateUpdateButton_Click" />
-                                            <MenuItem Header="Generate DELETE" Click="GenerateDeleteButton_Click" />
-                                            <MenuItem Header="Get Table SQL Schema" Click="GenerateTableSchemaButton_Click" />
-                                            <MenuItem Header="Copy Name" Click="CopySelectedObjectNameMenuItem_Click" />
-                                        </ContextMenu>
-                                    </ListBox.ContextMenu>
-                                </ListBox>
-                            </Grid>
+                            <views:TablesPanelView DataContext="{Binding SchemaAssistant}" />
                         </TabItem>
 
                         <TabItem Header="Procedures">
-                            <Grid Margin="10">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button Content="Refresh" Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Click="RefreshSchemaButton_Click" />
-                                    <TextBox x:Name="ProcedureSearchTextBox"
-                                             Width="190"
-                                             VerticalContentAlignment="Center"
-                                             ToolTip="Filter stored procedures"
-                                             TextChanged="ProcedureSearchTextBox_TextChanged" />
-                                </StackPanel>
-
-                                <ListBox x:Name="StoredProceduresListBox"
-                                         Grid.Row="1"
-                                         MinHeight="260"
-                                         DisplayMemberPath="FullName"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         SelectionChanged="StoredProceduresListBox_SelectionChanged">
-                                    <ListBox.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="Generate EXEC" Click="GenerateExecButton_Click" />
-                                            <MenuItem Header="Open In Runner" Click="OpenRunnerButton_Click" />
-                                            <MenuItem Header="Copy Name" Click="CopySelectedObjectNameMenuItem_Click" />
-                                        </ContextMenu>
-                                    </ListBox.ContextMenu>
-                                </ListBox>
-                            </Grid>
+                            <views:ProceduresPanelView DataContext="{Binding SchemaAssistant}" />
                         </TabItem>
 
                         <TabItem Header="Templates">
@@ -307,128 +244,7 @@
                         </TabItem>
 
                         <TabItem Header="Schema">
-                            <Grid Margin="10">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <TextBlock x:Name="SchemaSummaryTextBlock"
-                                           FontWeight="SemiBold"
-                                           Text="Select a table or stored procedure from Schema Assistant." />
-
-                                <Grid Grid.Row="1" Margin="0,10,0,0">
-                                    <Grid x:Name="TableDetailsPanel" Visibility="Visible">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="2*" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock x:Name="SelectedTableTextBlock"
-                                                   FontWeight="SemiBold"
-                                                   Text="Select a table to inspect columns." />
-
-                                        <DataGrid x:Name="TableColumnsDataGrid"
-                                                  Grid.Row="1"
-                                                  Margin="0,8,0,4"
-                                                  MinHeight="80"
-                                                  FlowDirection="LeftToRight"
-                                                  IsReadOnly="True"
-                                                  AutoGenerateColumns="True"
-                                                  HeadersVisibility="All"
-                                                  CanUserAddRows="False"
-                                                  CanUserDeleteRows="False"
-                                                  Loaded="DataGrid_Loaded"
-                                                  PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
-
-                                        <GridSplitter Grid.Row="2"
-                                                      Height="6"
-                                                      Margin="0,0,0,4"
-                                                      HorizontalAlignment="Stretch"
-                                                      ResizeDirection="Rows"
-                                                      ResizeBehavior="PreviousAndNext"
-                                                      Background="Transparent" />
-
-                                        <Grid Grid.Row="3">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Margin="0,0,0,6"
-                                                       FontWeight="SemiBold"
-                                                       Text="Table SQL Definition" />
-
-                                            <TextBox x:Name="TableSqlDefinitionTextBox"
-                                                     Grid.Row="1"
-                                                     IsReadOnly="True"
-                                                     AcceptsReturn="True"
-                                                     VerticalScrollBarVisibility="Auto"
-                                                     HorizontalScrollBarVisibility="Auto"
-                                                     TextWrapping="NoWrap"
-                                                     FontFamily="Consolas"
-                                                     FontSize="12" />
-                                        </Grid>
-                                    </Grid>
-
-                                    <Grid x:Name="ProcedureDetailsPanel" Visibility="Collapsed">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="2*" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock x:Name="SelectedProcedureTextBlock"
-                                                   FontWeight="SemiBold"
-                                                   Text="Select a stored procedure to inspect parameters." />
-
-                                        <DataGrid x:Name="ProcedureParametersDataGrid"
-                                                  Grid.Row="1"
-                                                  Margin="0,8,0,4"
-                                                  MinHeight="80"
-                                                  FlowDirection="LeftToRight"
-                                                  IsReadOnly="True"
-                                                  AutoGenerateColumns="True"
-                                                  HeadersVisibility="All"
-                                                  CanUserAddRows="False"
-                                                  CanUserDeleteRows="False"
-                                                  Loaded="DataGrid_Loaded"
-                                                  PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp" />
-
-                                        <GridSplitter Grid.Row="2"
-                                                      Height="6"
-                                                      Margin="0,0,0,4"
-                                                      HorizontalAlignment="Stretch"
-                                                      ResizeDirection="Rows"
-                                                      ResizeBehavior="PreviousAndNext"
-                                                      Background="Transparent" />
-
-                                        <Grid Grid.Row="3">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Margin="0,0,0,6"
-                                                       FontWeight="SemiBold"
-                                                       Text="Procedure SQL Definition" />
-
-                                            <TextBox x:Name="ProcedureSqlDefinitionTextBox"
-                                                     Grid.Row="1"
-                                                     IsReadOnly="True"
-                                                     AcceptsReturn="True"
-                                                     VerticalScrollBarVisibility="Auto"
-                                                     HorizontalScrollBarVisibility="Auto"
-                                                     TextWrapping="NoWrap"
-                                                     FontFamily="Consolas"
-                                                     FontSize="12" />
-                                        </Grid>
-                                    </Grid>
-                                </Grid>
-                            </Grid>
+                            <views:SchemaDetailView DataContext="{Binding SchemaAssistant}" />
                         </TabItem>
 
                         <TabItem Header="Results">

@@ -110,7 +110,21 @@ public partial class MainWindow : Window
             onTemplateActivated: OnTemplateActivated,
             confirmDelete: ConfirmDeleteTemplate,
             setStatus: SetStatus);
-        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel);
+        var schemaAssistant = new SchemaAssistantViewModel(
+            _databaseSchemaService,
+            _queryAssistantService,
+            _sqlCompletionCatalogService,
+            getConnectionString: () => ConnectionStringTextBox.Text.Trim(),
+            onTableSelected: OnSchemaTableSelected,
+            onTableCleared: OnSchemaTableCleared,
+            onProcedureSelected: OnSchemaProcedureSelected,
+            onProcedureCleared: OnSchemaProcedureCleared,
+            onSchemaMetadataLoaded: OnSchemaMetadataLoaded,
+            onScriptGenerated: OnSchemaScriptGenerated,
+            onOpenInRunnerRequested: OnOpenInRunnerRequested,
+            onCopyRequested: CopySchemaObjectNameToClipboardAsync,
+            setStatus: SetStatus);
+        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant);
         DataContext = ViewModel;
         RegisterCommands();
         BuildInputBindings();
@@ -133,7 +147,6 @@ public partial class MainWindow : Window
         await ViewModel.TemplatesPanel.RefreshAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
         OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
-        UpdateSchemaDetailsPanelByAssistantTab();
         ApplyEditModeState();
         ApplyEditRowsCornerButtonStyle();
         UpdateEditQueryTextFromInputs();
@@ -143,16 +156,6 @@ public partial class MainWindow : Window
         {
             SetStatus("Ready. Shortcuts: Ctrl+E to run query, Ctrl+Q to cancel.");
         }
-    }
-
-    private void SchemaAssistantTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsLoaded)
-        {
-            return;
-        }
-
-        UpdateSchemaDetailsPanelByAssistantTab();
     }
 
     private void OnSchemaAssistantVisibleChanged(bool visible)
@@ -494,6 +497,79 @@ public partial class MainWindow : Window
             MessageBoxImage.Warning);
 
         return confirmation == MessageBoxResult.Yes;
+    }
+
+    private void OnSchemaTableSelected(TableSchemaInfo table, List<ColumnSchemaInfo> columns)
+    {
+        _selectedTable = table;
+        _selectedColumns = columns;
+        UpdateEditQueryTextFromInputs();
+        ShowSelectedTableColumnsInEditRowsGrid();
+        OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
+        SubstituteTableNamePlaceholder(table);
+    }
+
+    private void OnSchemaTableCleared()
+    {
+        _selectedTable = null;
+        _selectedColumns.Clear();
+        UpdateEditQueryTextFromInputs();
+        ExitEditModeAndClearEditableRows();
+        EditRowsDataGrid.ItemsSource = null;
+    }
+
+    private void OnSchemaProcedureSelected(StoredProcedureSchemaInfo procedure, List<StoredProcedureParameterInfo> parameters)
+    {
+        _selectedStoredProcedure = procedure;
+        _selectedProcedureParameters = parameters;
+        OutputTabControl.SelectedIndex = OutputSchemaTabIndex;
+    }
+
+    private void OnSchemaProcedureCleared()
+    {
+        _selectedStoredProcedure = null;
+        _selectedProcedureParameters.Clear();
+    }
+
+    private void OnSchemaMetadataLoaded(List<TableSchemaInfo> tables, List<StoredProcedureSchemaInfo> storedProcedures, List<ForeignKeySchemaInfo> foreignKeys)
+    {
+        _tables = tables;
+        _storedProcedures = storedProcedures;
+        _foreignKeys = foreignKeys;
+        _selectedTable = null;
+        _selectedStoredProcedure = null;
+        _selectedColumns.Clear();
+        _selectedProcedureParameters.Clear();
+        ExitEditModeAndClearEditableRows();
+        EditRowsDataGrid.ItemsSource = null;
+    }
+
+    private void OnSchemaScriptGenerated(string sql, string status)
+    {
+        SetQueryEditorText(sql);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        SetStatus(status);
+    }
+
+    private void OnOpenInRunnerRequested(StoredProcedureSchemaInfo procedure, List<StoredProcedureParameterInfo> parameters)
+    {
+        _runnerParameterRows.Clear();
+
+        foreach (var parameter in parameters.Where(x => !x.IsReturnValue))
+        {
+            _runnerParameterRows.Add(new ProcedureParameterEditorRow
+            {
+                ParameterName = parameter.ParameterName,
+                DataType = parameter.DataType,
+                Value = string.Empty,
+                SendAsNull = false,
+                IsOutput = parameter.IsOutput
+            });
+        }
+
+        RunnerProcedureTextBlock.Text = $"Ready to execute {procedure.FullName}";
+        OutputTabControl.SelectedIndex = OutputProcedureRunnerTabIndex;
+        SetStatus("Loaded procedure parameters into runner.");
     }
 
     private async void ExportCsvButton_Click(object sender, RoutedEventArgs e)
@@ -1031,65 +1107,6 @@ public partial class MainWindow : Window
     }
 
 
-    private async void RefreshSchemaButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return;
-        }
-
-        await LoadSchemaMetadataAsync(connectionString);
-    }
-
-    private async void TablesListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return;
-        }
-
-        _selectedTable = TablesListBox.SelectedItem as TableSchemaInfo;
-        if (_selectedTable is null)
-        {
-            _selectedColumns.Clear();
-            TableColumnsDataGrid.ItemsSource = null;
-            TableSqlDefinitionTextBox.Text = string.Empty;
-            SelectedTableTextBlock.Text = "Select a table to inspect columns.";
-            SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
-            UpdateEditQueryTextFromInputs();
-            ExitEditModeAndClearEditableRows();
-            EditRowsDataGrid.ItemsSource = null;
-            return;
-        }
-
-        try
-        {
-            var columns = await _databaseSchemaService.GetColumnsAsync(
-                connectionString,
-                _selectedTable.SchemaName,
-                _selectedTable.TableName,
-                CancellationToken.None);
-
-            _selectedColumns = columns.OrderBy(x => x.OrdinalPosition).ToList();
-            _sqlCompletionCatalogService.RefreshTableColumns(_selectedTable, _selectedColumns);
-            TableColumnsDataGrid.ItemsSource = _selectedColumns;
-            TableSqlDefinitionTextBox.Text = _queryAssistantService.BuildTableSchemaText(_selectedTable, _selectedColumns);
-            SelectedTableTextBlock.Text = $"{_selectedTable.FullName} ({_selectedColumns.Count} columns)";
-            SchemaSummaryTextBlock.Text = $"Table selected: {_selectedTable.FullName}";
-            UpdateSchemaDetailsPanelByAssistantTab();
-            UpdateEditQueryTextFromInputs();
-            ShowSelectedTableColumnsInEditRowsGrid();
-            OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
-
-            // Auto-substitute TableName placeholder with selected table name
-            SubstituteTableNamePlaceholder(_selectedTable);
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Failed to load columns: {ex.Message}");
-        }
-    }
-
     private void SubstituteTableNamePlaceholder(TableSchemaInfo selectedTable)
     {
         var editors = new[] { _sqlEditor, _editRowsSqlEditor };
@@ -1113,224 +1130,6 @@ public partial class MainWindow : Window
                 editor.CaretIndex = Math.Min(caretPos, editor.Text.Length);
             }
         }
-    }
-
-    private async void StoredProceduresListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return;
-        }
-
-        _selectedStoredProcedure = StoredProceduresListBox.SelectedItem as StoredProcedureSchemaInfo;
-        if (_selectedStoredProcedure is null)
-        {
-            _selectedProcedureParameters.Clear();
-            ProcedureParametersDataGrid.ItemsSource = null;
-            ProcedureSqlDefinitionTextBox.Text = string.Empty;
-            SelectedProcedureTextBlock.Text = "Select a stored procedure to inspect parameters.";
-            SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
-            return;
-        }
-
-        try
-        {
-            var parameters = await _databaseSchemaService.GetStoredProcedureParametersAsync(
-                connectionString,
-                _selectedStoredProcedure.SchemaName,
-                _selectedStoredProcedure.ProcedureName,
-                CancellationToken.None);
-
-            _selectedProcedureParameters = parameters.OrderBy(x => x.OrdinalPosition).ToList();
-            _sqlCompletionCatalogService.RefreshProcedureParameters(_selectedStoredProcedure, _selectedProcedureParameters);
-            ProcedureParametersDataGrid.ItemsSource = _selectedProcedureParameters;
-            var procedureDefinition = await _databaseSchemaService.GetStoredProcedureDefinitionAsync(
-                connectionString,
-                _selectedStoredProcedure.SchemaName,
-                _selectedStoredProcedure.ProcedureName,
-                CancellationToken.None);
-
-            ProcedureSqlDefinitionTextBox.Text = string.IsNullOrWhiteSpace(procedureDefinition)
-                ? "Definition is unavailable for this object or current login does not have VIEW DEFINITION permission."
-                : procedureDefinition;
-
-            SelectedProcedureTextBlock.Text = $"{_selectedStoredProcedure.FullName} ({_selectedProcedureParameters.Count} parameters)";
-            SchemaSummaryTextBlock.Text = $"Stored procedure selected: {_selectedStoredProcedure.FullName}";
-            UpdateSchemaDetailsPanelByAssistantTab();
-            OutputTabControl.SelectedIndex = OutputSchemaTabIndex;
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Failed to load procedure parameters: {ex.Message}");
-        }
-    }
-
-    private void TableSearchTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        ApplyTableFilter();
-    }
-
-    private void ProcedureSearchTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        ApplyProcedureFilter();
-    }
-
-    private void GenerateSelectButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildSelectTopQuery(_selectedTable!));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated SELECT query from table metadata.");
-    }
-
-    private void GenerateInsertButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildInsertQuery(_selectedTable!, _selectedColumns));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated INSERT query from table metadata.");
-    }
-
-    private void GenerateUpdateButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        var sql = _queryAssistantService.BuildUpdateQuery(_selectedTable!, _selectedColumns);
-        SetQueryEditorText(sql);
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-
-        SetStatus(sql.Contains("TODO", StringComparison.Ordinal)
-            ? "Generated UPDATE query. No primary key detected, so WHERE clause needs manual fix."
-            : "Generated UPDATE query from table metadata.");
-    }
-
-    private void GenerateDeleteButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        var sql = _queryAssistantService.BuildDeleteQuery(_selectedTable!, _selectedColumns);
-        SetQueryEditorText(sql);
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-
-        SetStatus(sql.Contains("TODO", StringComparison.Ordinal)
-            ? "Generated DELETE query. No primary key detected, so WHERE clause needs manual fix."
-            : "Generated DELETE query from table metadata.");
-    }
-
-    private void GenerateTableSchemaButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildTableSchemaText(_selectedTable!, _selectedColumns));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated table SQL schema text.");
-    }
-
-    private void GenerateDropTableScriptButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildDropTableScript(_selectedTable!));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated DROP TABLE script in SQL Editor.");
-    }
-
-    private void GenerateDropAndCreateTableScriptButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureTableSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildDropAndCreateTableScript(_selectedTable!, _selectedColumns));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated DROP + CREATE TABLE script in SQL Editor.");
-    }
-
-    private void GenerateExecButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureProcedureSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildExecuteProcedureQuery(_selectedStoredProcedure!, _selectedProcedureParameters));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated EXEC query from stored procedure metadata.");
-    }
-
-    private void GenerateDropProcedureScriptButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureProcedureSelection())
-        {
-            return;
-        }
-
-        SetQueryEditorText(_queryAssistantService.BuildDropProcedureScript(_selectedStoredProcedure!));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated DROP PROCEDURE script in SQL Editor.");
-    }
-
-    private void GenerateAlterProcedureScriptButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureProcedureSelection())
-        {
-            return;
-        }
-
-        var definition = string.IsNullOrWhiteSpace(ProcedureSqlDefinitionTextBox.Text)
-            ? null
-            : ProcedureSqlDefinitionTextBox.Text;
-
-        SetQueryEditorText(_queryAssistantService.BuildAlterProcedureScript(_selectedStoredProcedure!, definition));
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus("Generated ALTER PROCEDURE script in SQL Editor.");
-    }
-
-    private void OpenRunnerButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureProcedureSelection())
-        {
-            return;
-        }
-
-        _runnerParameterRows.Clear();
-
-        foreach (var parameter in _selectedProcedureParameters.Where(x => !x.IsReturnValue))
-        {
-            _runnerParameterRows.Add(new ProcedureParameterEditorRow
-            {
-                ParameterName = parameter.ParameterName,
-                DataType = parameter.DataType,
-                Value = string.Empty,
-                SendAsNull = false,
-                IsOutput = parameter.IsOutput
-            });
-        }
-
-        RunnerProcedureTextBlock.Text = $"Ready to execute {_selectedStoredProcedure!.FullName}";
-        OutputTabControl.SelectedIndex = OutputProcedureRunnerTabIndex;
-        SetStatus("Loaded procedure parameters into runner.");
     }
 
     private async void ExecuteProcedureButton_Click(object sender, RoutedEventArgs e)
@@ -1375,91 +1174,7 @@ public partial class MainWindow : Window
 
     private async Task LoadSchemaMetadataAsync(string connectionString)
     {
-        try
-        {
-            SetStatus("Loading schema metadata...");
-
-            var tablesTask = _databaseSchemaService.GetTablesAsync(connectionString, CancellationToken.None);
-            var proceduresTask = _databaseSchemaService.GetStoredProceduresAsync(connectionString, CancellationToken.None);
-            var foreignKeysTask = _databaseSchemaService.GetForeignKeysAsync(connectionString, CancellationToken.None);
-
-            await Task.WhenAll(tablesTask, proceduresTask, foreignKeysTask);
-
-            _tables = tablesTask.Result.ToList();
-            _storedProcedures = proceduresTask.Result.ToList();
-            _foreignKeys = foreignKeysTask.Result.ToList();
-            _sqlCompletionCatalogService.RefreshSchemaMetadata(_tables, _storedProcedures, _foreignKeys);
-
-            _selectedTable = null;
-            _selectedStoredProcedure = null;
-            _selectedColumns.Clear();
-            _selectedProcedureParameters.Clear();
-            TableColumnsDataGrid.ItemsSource = null;
-            ProcedureParametersDataGrid.ItemsSource = null;
-            TableSqlDefinitionTextBox.Text = string.Empty;
-            ProcedureSqlDefinitionTextBox.Text = string.Empty;
-            SelectedTableTextBlock.Text = "Select a table to inspect columns.";
-            SelectedProcedureTextBlock.Text = "Select a stored procedure to inspect parameters.";
-            SchemaSummaryTextBlock.Text = "Select a table or stored procedure from Schema Assistant.";
-            ExitEditModeAndClearEditableRows();
-            EditRowsDataGrid.ItemsSource = null;
-
-            ApplyTableFilter();
-            ApplyProcedureFilter();
-
-            if (_tables.Count == 0 && _storedProcedures.Count == 0)
-            {
-                SetStatus("Schema refresh completed, but no tables or procedures were found. Verify the target database in your connection string and user permissions.");
-                return;
-            }
-
-            SetStatus($"Schema loaded successfully: {_tables.Count} tables, {_storedProcedures.Count} procedures, {_foreignKeys.Count} foreign keys.");
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Failed to load schema metadata: {ex.Message}");
-        }
-    }
-
-    private void ApplyTableFilter()
-    {
-        var query = TableSearchTextBox.Text.Trim();
-        var filtered = string.IsNullOrWhiteSpace(query)
-            ? _tables
-            : _tables
-                .Where(x => x.FullName.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-        TablesListBox.ItemsSource = filtered;
-    }
-
-    private void ApplyProcedureFilter()
-    {
-        var query = ProcedureSearchTextBox.Text.Trim();
-        var filtered = string.IsNullOrWhiteSpace(query)
-            ? _storedProcedures
-            : _storedProcedures
-                .Where(x => x.FullName.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-        StoredProceduresListBox.ItemsSource = filtered;
-    }
-
-    private bool EnsureTableSelection()
-    {
-        if (_selectedTable is null)
-        {
-            SetStatus("Select a table first.");
-            return false;
-        }
-
-        if (_selectedColumns.Count == 0)
-        {
-            SetStatus("No columns available for selected table.");
-            return false;
-        }
-
-        return true;
+        await ViewModel.SchemaAssistant.LoadAsync(connectionString);
     }
 
     private bool EnsureProcedureSelection()
@@ -1837,65 +1552,11 @@ public partial class MainWindow : Window
         e.Column.Header = headerText.Replace("_", "__", StringComparison.Ordinal);
     }
 
-    private async void SchemaListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private async Task CopySchemaObjectNameToClipboardAsync(string text)
     {
-        if (sender is not ListBox)
+        if (await TrySetClipboardTextAsync(text))
         {
-            return;
-        }
-
-        var clickedItem = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
-        if (clickedItem is null)
-        {
-            return;
-        }
-
-        if (clickedItem.Content is not object item)
-        {
-            return;
-        }
-
-        var copiedText = item switch
-        {
-            TableSchemaInfo table => table.FullName,
-            StoredProcedureSchemaInfo procedure => procedure.FullName,
-            _ => item.ToString() ?? string.Empty
-        };
-
-        if (string.IsNullOrWhiteSpace(copiedText))
-        {
-            return;
-        }
-
-        if (await TrySetClipboardTextAsync(copiedText))
-        {
-            SetStatus($"Copied value to clipboard: {TruncateForStatus(copiedText)}");
-        }
-        else
-        {
-            SetStatus("Could not access the clipboard. Please try again.");
-        }
-    }
-
-    private async void CopySelectedObjectNameMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var selectedName = TablesListBox.SelectedItem switch
-        {
-            TableSchemaInfo table => table.FullName,
-            _ => StoredProceduresListBox.SelectedItem is StoredProcedureSchemaInfo procedure
-                ? procedure.FullName
-                : string.Empty
-        };
-
-        if (string.IsNullOrWhiteSpace(selectedName))
-        {
-            SetStatus("Select a table or stored procedure first.");
-            return;
-        }
-
-        if (await TrySetClipboardTextAsync(selectedName))
-        {
-            SetStatus($"Copied value to clipboard: {selectedName}");
+            SetStatus($"Copied value to clipboard: {text}");
         }
         else
         {
@@ -2197,21 +1858,6 @@ public partial class MainWindow : Window
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
             return value;
-        }
-    }
-
-    private void UpdateSchemaDetailsPanelByAssistantTab()
-    {
-        var selectedIndex = SchemaAssistantTabControl.SelectedIndex;
-        var showTableDetails = selectedIndex == 0;
-        var showProcedureDetails = selectedIndex == 1;
-
-        TableDetailsPanel.Visibility = showTableDetails ? Visibility.Visible : Visibility.Collapsed;
-        ProcedureDetailsPanel.Visibility = showProcedureDetails ? Visibility.Visible : Visibility.Collapsed;
-
-        if (!showTableDetails && !showProcedureDetails)
-        {
-            SchemaSummaryTextBlock.Text = "Open Tables or Stored Procedures tab to display schema details.";
         }
     }
 

@@ -1,0 +1,38 @@
+<UserControl x:Class="DatabaseManager.Wpf.Views.ProceduresPanelView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Content="Refresh" Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RefreshCommand}" />
+            <TextBox Width="190"
+                     VerticalContentAlignment="Center"
+                     ToolTip="Filter stored procedures"
+                     Text="{Binding ProcedureSearchText, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+
+        <ListBox x:Name="StoredProceduresListBox"
+                 Grid.Row="1"
+                 MinHeight="260"
+                 DisplayMemberPath="FullName"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ItemsSource="{Binding FilteredStoredProcedures}"
+                 SelectedItem="{Binding SelectedProcedureItem, Mode=TwoWay}">
+            <ListBox.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Generate EXEC" Command="{Binding PlacementTarget.DataContext.GenerateExecCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <MenuItem Header="Open In Runner" Command="{Binding PlacementTarget.DataContext.OpenInRunnerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <MenuItem Header="Copy Name" Command="{Binding PlacementTarget.DataContext.CopySelectedObjectNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                </ContextMenu>
+            </ListBox.ContextMenu>
+        </ListBox>
+    </Grid>
+</UserControl>
