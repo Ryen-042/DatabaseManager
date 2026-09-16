@@ -130,6 +130,7 @@ public partial class MainWindow : Window
         ApplyEditModeState();
         ApplyEditRowsCornerButtonStyle();
         UpdateEditQueryTextFromInputs();
+        await ApplyDefaultConnectionProfileAsync();
         await ConnectToDatabaseAsync(triggeredOnStartup: true);
         if (_tables.Count == 0 && _storedProcedures.Count == 0)
         {
@@ -307,7 +308,7 @@ public partial class MainWindow : Window
         await ConnectToDatabaseAsync(triggeredOnStartup: false);
     }
 
-    private void ConnectionSummaryButton_Click(object sender, RoutedEventArgs e)
+    private async void ConnectionSummaryButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new ConnectionPickerWindow(_connectionProfileStoreService, ConnectionStringTextBox.Text) { Owner = this };
         if (picker.ShowDialog() != true || picker.SelectedConnectionString is null)
@@ -318,6 +319,36 @@ public partial class MainWindow : Window
         ConnectionStringTextBox.Text = picker.SelectedConnectionString;
         _selectedConnectionProfileId = picker.SelectedProfileId;
         _selectedConnectionProfileName = picker.SelectedProfileName;
+        UpdateConnectionSummaryDisplay();
+
+        // Picking a connection in the dialog should actually connect, not just fill in the
+        // (now-hidden) textbox and leave the user to separately press the toolbar Connect
+        // button - besides being the behavior a "Connect" button implies, TouchLastUsedAsync
+        // only ever runs from inside ConnectToDatabaseAsync's success path, so without this
+        // a profile's "last used" timestamp would never update from picking it alone.
+        await ConnectToDatabaseAsync(triggeredOnStartup: false);
+    }
+
+    /// <summary>
+    /// A saved connection profile marked "default" should be what the app auto-connects to
+    /// on startup - that's the whole point of marking one default. Previously "default" only
+    /// affected which profile the picker dialog pre-selected; startup only ever looked at
+    /// App.config's DefaultConnectionString, with no awareness of profiles at all. Profiles
+    /// now take priority; App.config's value remains the fallback when no profile is marked
+    /// default (e.g. before any profiles have been created).
+    /// </summary>
+    private async Task ApplyDefaultConnectionProfileAsync()
+    {
+        var profiles = await _connectionProfileStoreService.GetAllAsync(CancellationToken.None);
+        var defaultProfile = profiles.FirstOrDefault(p => p.IsDefault);
+        if (defaultProfile is null)
+        {
+            return;
+        }
+
+        ConnectionStringTextBox.Text = _connectionProfileStoreService.Decrypt(defaultProfile);
+        _selectedConnectionProfileId = defaultProfile.Id;
+        _selectedConnectionProfileName = defaultProfile.Name;
         UpdateConnectionSummaryDisplay();
     }
 
