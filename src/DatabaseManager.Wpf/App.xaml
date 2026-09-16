@@ -294,19 +294,63 @@
                 <Setter Property="Margin" Value="0" />
                 <Setter Property="Template">
                     <Setter.Value>
+                        <!--
+                            Single template covering every MenuItem role this app uses: a flat
+                            leaf item (right-click context menus, and leaf commands inside a
+                            dropdown) AND a parent item that opens a dropdown (the top menu
+                            bar's Connection/Edit Rows/Query/View headers). The Popup only ever
+                            opens when the item actually has children (WPF only sets
+                            IsSubmenuOpen for those), so including it unconditionally is safe
+                            for leaf items - this app has no further-nested submenus, so a
+                            single Bottom-placed Popup (rather than Role-specific
+                            Bottom/Right placement) covers every case in use.
+                        -->
                         <ControlTemplate TargetType="MenuItem">
-                            <Border x:Name="MenuItemBorder"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="2"
-                                    SnapsToDevicePixels="True">
-                                <ContentPresenter ContentSource="Header"
-                                                  Margin="{TemplateBinding Padding}"
-                                                  RecognizesAccessKey="True"
-                                                  HorizontalAlignment="Left"
-                                                  VerticalAlignment="Center" />
-                            </Border>
+                            <Grid SnapsToDevicePixels="True">
+                                <Border x:Name="MenuItemBorder"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="2">
+                                    <Grid Margin="{TemplateBinding Padding}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ContentPresenter Grid.Column="0"
+                                                          ContentSource="Header"
+                                                          RecognizesAccessKey="True"
+                                                          HorizontalAlignment="Left"
+                                                          VerticalAlignment="Center" />
+                                        <TextBlock x:Name="GestureText"
+                                                   Grid.Column="1"
+                                                   Text="{TemplateBinding InputGestureText}"
+                                                   Margin="20,0,0,0"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <Popup x:Name="PART_Popup"
+                                       Placement="Bottom"
+                                       AllowsTransparency="True"
+                                       Focusable="False"
+                                       PopupAnimation="Fade"
+                                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <Border Background="{DynamicResource PanelBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Padding="3"
+                                            MinWidth="170"
+                                            SnapsToDevicePixels="True">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.35" Color="#FF000000" />
+                                        </Border.Effect>
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                    </Border>
+                                </Popup>
+                            </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsHighlighted" Value="True">
                                     <Setter TargetName="MenuItemBorder" Property="Background" Value="{DynamicResource AccentBrush}" />
@@ -318,6 +362,9 @@
                                     <Setter TargetName="MenuItemBorder" Property="BorderBrush" Value="Transparent" />
                                     <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                                     <Setter Property="Opacity" Value="0.9" />
+                                </Trigger>
+                                <Trigger Property="InputGestureText" Value="">
+                                    <Setter TargetName="GestureText" Property="Visibility" Value="Collapsed" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

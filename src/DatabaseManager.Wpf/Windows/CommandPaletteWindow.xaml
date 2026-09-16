@@ -51,14 +51,27 @@
                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                            FontSize="11"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,8,0" />
+                                           Margin="0,0,10,0" />
                                 <TextBlock Text="{Binding DisplayName}" FontSize="13" VerticalAlignment="Center" />
                             </StackPanel>
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding GestureDisplayString}"
+                            <TextBlock x:Name="GestureText"
+                                       Grid.Column="1"
+                                       Margin="20,0,0,0"
+                                       Text="{Binding GestureDisplayString, StringFormat=[{0}]}"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="11"
-                                       VerticalAlignment="Center" />
+                                       FontFamily="Consolas"
+                                       VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding GestureDisplayString}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
