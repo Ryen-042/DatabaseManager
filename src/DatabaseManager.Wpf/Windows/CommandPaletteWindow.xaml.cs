@@ -7,6 +7,7 @@ namespace DatabaseManager.Wpf.Windows;
 public partial class CommandPaletteWindow : Window
 {
     private readonly IReadOnlyList<AppCommandDescriptor> _allCommands;
+    private bool _isClosing;
 
     public CommandPaletteWindow(IReadOnlyList<AppCommandDescriptor> commands)
     {
@@ -44,7 +45,7 @@ public partial class CommandPaletteWindow : Window
         switch (e.Key)
         {
             case Key.Escape:
-                Close();
+                RequestClose();
                 e.Handled = true;
                 break;
             case Key.Down:
@@ -84,13 +85,32 @@ public partial class CommandPaletteWindow : Window
     {
         if (ResultsListBox.SelectedItem is PaletteItem item && item.Descriptor.Command.CanExecute(null))
         {
-            Close();
+            RequestClose();
             item.Descriptor.Command.Execute(null);
         }
     }
 
     private void CommandPaletteWindow_Deactivated(object sender, EventArgs e)
     {
+        RequestClose();
+    }
+
+    /// <summary>
+    /// Closing this window (a modal ShowDialog) deactivates it as part of the normal close
+    /// sequence, which re-enters CommandPaletteWindow_Deactivated and would call Close() a
+    /// second time on a window that's already closing - that reentrant call is what caused
+    /// the app to hang for a couple of seconds and then crash when dismissing the palette
+    /// with Escape. Every path that wants to close this window goes through here instead of
+    /// calling Close() directly, so it only ever happens once.
+    /// </summary>
+    private void RequestClose()
+    {
+        if (_isClosing)
+        {
+            return;
+        }
+
+        _isClosing = true;
         Close();
     }
 
