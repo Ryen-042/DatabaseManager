@@ -103,7 +103,13 @@ public partial class MainWindow : Window
         SqlEditorSupport.Configure(EditQueryTextBox);
         _toastService = new ToastService(Dispatcher);
         ToastHostControl.Toasts = _toastService.Toasts;
-        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged);
+        var templatesPanel = new TemplatesPanelViewModel(
+            _templateStoreService,
+            getCurrentSqlText: () => QueryTextBox.Text,
+            onTemplateActivated: OnTemplateActivated,
+            confirmDelete: ConfirmDeleteTemplate,
+            setStatus: SetStatus);
+        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel);
         DataContext = ViewModel;
         RegisterCommands();
         BuildInputBindings();
@@ -123,7 +129,7 @@ public partial class MainWindow : Window
     {
         App.ApplyTheme(ViewModel.IsDarkMode);
         ApplyTitleBarTheme(ViewModel.IsDarkMode);
-        await LoadTemplatesAsync();
+        await ViewModel.TemplatesPanel.RefreshAsync();
         RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
         OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
         UpdateSchemaDetailsPanelByAssistantTab();
@@ -471,75 +477,22 @@ public partial class MainWindow : Window
         SetStatus("Cancellation requested...");
     }
 
-    private async void SaveTemplateButton_Click(object sender, RoutedEventArgs e)
+    private void OnTemplateActivated(string name, string sql)
     {
-        var name = TemplateNameTextBox.Text.Trim();
-        var sql = QueryTextBox.Text;
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            SetStatus("Template name is required.");
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(sql))
-        {
-            SetStatus("Cannot save an empty SQL template.");
-            return;
-        }
-
-        await _templateStoreService.SaveAsync(new QueryTemplate
-        {
-            Name = name,
-            Sql = sql
-        }, CancellationToken.None);
-
-        await LoadTemplatesAsync();
-        SetStatus($"Template '{name}' saved.");
+        QueryTextBox.Text = sql;
+        TrackRecentSqlFragments(sql);
+        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
     }
 
-    private async void RefreshTemplatesButton_Click(object sender, RoutedEventArgs e)
+    private bool ConfirmDeleteTemplate(string name)
     {
-        await LoadTemplatesAsync();
-        SetStatus("Templates refreshed.");
-    }
-
-    private async void DeleteTemplateButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (TemplatesListBox.SelectedItem is not QueryTemplate selected)
-        {
-            SetStatus("Select a template to delete.");
-            return;
-        }
-
         var confirmation = MessageBox.Show(
-            $"Delete template '{selected.Name}'?",
+            $"Delete template '{name}'?",
             "Delete Template",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
 
-        if (confirmation != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        await _templateStoreService.DeleteAsync(selected.Name, CancellationToken.None);
-        await LoadTemplatesAsync();
-        SetStatus($"Template '{selected.Name}' deleted.");
-    }
-
-    private void TemplatesListBox_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (TemplatesListBox.SelectedItem is not QueryTemplate selected)
-        {
-            return;
-        }
-
-        TemplateNameTextBox.Text = selected.Name;
-        QueryTextBox.Text = selected.Sql;
-        TrackRecentSqlFragments(selected.Sql);
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
-        SetStatus($"Template '{selected.Name}' loaded into editor.");
+        return confirmation == MessageBoxResult.Yes;
     }
 
     private async void ExportCsvButton_Click(object sender, RoutedEventArgs e)
@@ -1076,11 +1029,6 @@ public partial class MainWindow : Window
         SetStatus($"Excel export complete: {dialog.FileName}");
     }
 
-    private async Task LoadTemplatesAsync()
-    {
-        var templates = await _templateStoreService.GetAllAsync(CancellationToken.None);
-        TemplatesListBox.ItemsSource = templates;
-    }
 
     private async void RefreshSchemaButton_Click(object sender, RoutedEventArgs e)
     {

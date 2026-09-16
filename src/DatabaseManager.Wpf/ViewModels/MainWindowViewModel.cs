@@ -18,14 +18,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel(
         ICommandRegistry commandRegistry,
         Action<bool> onDarkModeChanged,
-        Action<bool> onSchemaAssistantVisibleChanged)
+        Action<bool> onSchemaAssistantVisibleChanged,
+        TemplatesPanelViewModel templatesPanel)
     {
         CommandRegistry = commandRegistry;
         _onDarkModeChanged = onDarkModeChanged;
         _onSchemaAssistantVisibleChanged = onSchemaAssistantVisibleChanged;
+        TemplatesPanel = templatesPanel;
     }
 
     public ICommandRegistry CommandRegistry { get; }
+
+    public TemplatesPanelViewModel TemplatesPanel { get; }
 
     [ObservableProperty]
     private bool _isDarkMode = true;
