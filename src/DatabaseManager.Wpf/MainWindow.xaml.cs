@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Collections.ObjectModel;
 using System.Configuration;
 using System.Linq;
@@ -71,6 +71,7 @@ public partial class MainWindow : Window
     private DataTable? _editableResultsTable;
     private bool _isEditMode;
     private bool _isSyncingEditQuery;
+    private bool _isSettingQueryTextProgrammatically;
     private bool _isEditRowsCustomQueryMode;
     private int _lastEditRowsCurrentRowIndex = -1;
     private readonly ISqlSuggestionEngine _sqlSuggestionEngine = new SqlSuggestionEngine();
@@ -479,7 +480,7 @@ public partial class MainWindow : Window
 
     private void OnTemplateActivated(string name, string sql)
     {
-        QueryTextBox.Text = sql;
+        SetQueryEditorText(sql);
         TrackRecentSqlFragments(sql);
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
     }
@@ -1181,7 +1182,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildSelectTopQuery(_selectedTable!);
+        SetQueryEditorText(_queryAssistantService.BuildSelectTopQuery(_selectedTable!));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated SELECT query from table metadata.");
     }
@@ -1193,7 +1194,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildInsertQuery(_selectedTable!, _selectedColumns);
+        SetQueryEditorText(_queryAssistantService.BuildInsertQuery(_selectedTable!, _selectedColumns));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated INSERT query from table metadata.");
     }
@@ -1206,7 +1207,7 @@ public partial class MainWindow : Window
         }
 
         var sql = _queryAssistantService.BuildUpdateQuery(_selectedTable!, _selectedColumns);
-        QueryTextBox.Text = sql;
+        SetQueryEditorText(sql);
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
 
         SetStatus(sql.Contains("TODO", StringComparison.Ordinal)
@@ -1222,7 +1223,7 @@ public partial class MainWindow : Window
         }
 
         var sql = _queryAssistantService.BuildDeleteQuery(_selectedTable!, _selectedColumns);
-        QueryTextBox.Text = sql;
+        SetQueryEditorText(sql);
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
 
         SetStatus(sql.Contains("TODO", StringComparison.Ordinal)
@@ -1237,7 +1238,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildTableSchemaText(_selectedTable!, _selectedColumns);
+        SetQueryEditorText(_queryAssistantService.BuildTableSchemaText(_selectedTable!, _selectedColumns));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated table SQL schema text.");
     }
@@ -1249,7 +1250,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildDropTableScript(_selectedTable!);
+        SetQueryEditorText(_queryAssistantService.BuildDropTableScript(_selectedTable!));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated DROP TABLE script in SQL Editor.");
     }
@@ -1261,7 +1262,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildDropAndCreateTableScript(_selectedTable!, _selectedColumns);
+        SetQueryEditorText(_queryAssistantService.BuildDropAndCreateTableScript(_selectedTable!, _selectedColumns));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated DROP + CREATE TABLE script in SQL Editor.");
     }
@@ -1273,7 +1274,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildExecuteProcedureQuery(_selectedStoredProcedure!, _selectedProcedureParameters);
+        SetQueryEditorText(_queryAssistantService.BuildExecuteProcedureQuery(_selectedStoredProcedure!, _selectedProcedureParameters));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated EXEC query from stored procedure metadata.");
     }
@@ -1285,7 +1286,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        QueryTextBox.Text = _queryAssistantService.BuildDropProcedureScript(_selectedStoredProcedure!);
+        SetQueryEditorText(_queryAssistantService.BuildDropProcedureScript(_selectedStoredProcedure!));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated DROP PROCEDURE script in SQL Editor.");
     }
@@ -1301,7 +1302,7 @@ public partial class MainWindow : Window
             ? null
             : ProcedureSqlDefinitionTextBox.Text;
 
-        QueryTextBox.Text = _queryAssistantService.BuildAlterProcedureScript(_selectedStoredProcedure!, definition);
+        SetQueryEditorText(_queryAssistantService.BuildAlterProcedureScript(_selectedStoredProcedure!, definition));
         OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
         SetStatus("Generated ALTER PROCEDURE script in SQL Editor.");
     }
@@ -2536,6 +2537,11 @@ public partial class MainWindow : Window
     {
         if (ReferenceEquals(sender, QueryTextBox))
         {
+            if (_isSettingQueryTextProgrammatically)
+            {
+                return;
+            }
+
             _ = UpdateSqlSuggestionsForAsync(_sqlEditor!);
             return;
         }
@@ -2544,6 +2550,28 @@ public partial class MainWindow : Window
         {
             _ = UpdateSqlSuggestionsForAsync(_editRowsSqlEditor!);
         }
+    }
+
+    /// <summary>
+    /// Sets the SQL Editor's text without triggering the autocomplete suggestion popup -
+    /// use this instead of "QueryTextBox.Text = ..." for any programmatic replacement
+    /// (loading a template, generating a script from schema metadata, etc.), since a plain
+    /// assignment fires the same TextChanged path as user typing and pops suggestions
+    /// unrelated to what the user just did.
+    /// </summary>
+    private void SetQueryEditorText(string sql)
+    {
+        _isSettingQueryTextProgrammatically = true;
+        try
+        {
+            QueryTextBox.Text = sql;
+        }
+        finally
+        {
+            _isSettingQueryTextProgrammatically = false;
+        }
+
+        HideSqlSuggestions();
     }
 
     private void SqlEditorTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
