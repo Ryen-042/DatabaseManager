@@ -46,11 +46,15 @@ public partial class MainWindow : Window
     private readonly IDatabaseSchemaService _databaseSchemaService = new SqlServerSchemaService();
     private readonly IQueryAssistantService _queryAssistantService = new SqlQueryAssistantService();
     private readonly IStoredProcedureExecutionService _storedProcedureExecutionService = new StoredProcedureExecutionService();
+    private readonly IConnectionProfileStoreService _connectionProfileStoreService = new ConnectionProfileStoreService();
     private static readonly IValueConverter ResultsValueConverter = new ResultValueConverter();
 
     private readonly ICommandRegistry _commandRegistry = new AppCommandRegistry();
     private readonly IToastService _toastService;
     public MainWindowViewModel ViewModel { get; }
+
+    private Guid? _selectedConnectionProfileId;
+    private string? _selectedConnectionProfileName;
 
     private DataTable? _currentDataTable;
     private bool _currentFullOutputMode;
@@ -92,6 +96,7 @@ public partial class MainWindow : Window
         {
             ConnectionStringTextBox.Text = defaultConnectionString;
         }
+        UpdateConnectionSummaryDisplay();
         _sqlEditor = new AvalonEditSqlTextEditorAdapter(QueryTextBox);
         _editRowsSqlEditor = new AvalonEditSqlTextEditorAdapter(EditQueryTextBox);
         SqlEditorSupport.Configure(QueryTextBox);
@@ -201,6 +206,9 @@ public partial class MainWindow : Window
         Reg("connection.connect", "Connect", "Connection", null,
             new AsyncRelayCommand(() => ConnectToDatabaseAsync(triggeredOnStartup: false)), "Icon.Power");
 
+        Reg("connection.manage", "Manage Connections...", "Connection", null,
+            new RelayCommand(() => ConnectionSummaryButton_Click(ConnectionSummaryButton, new RoutedEventArgs())), "Icon.Power", "profile", "saved");
+
         Reg("query.run", "Run Query", "Query", new KeyGesture(Key.E, ModifierKeys.Control),
             new RelayCommand(() =>
             {
@@ -299,6 +307,29 @@ public partial class MainWindow : Window
         await ConnectToDatabaseAsync(triggeredOnStartup: false);
     }
 
+    private void ConnectionSummaryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new ConnectionPickerWindow(_connectionProfileStoreService, ConnectionStringTextBox.Text) { Owner = this };
+        if (picker.ShowDialog() != true || picker.SelectedConnectionString is null)
+        {
+            return;
+        }
+
+        ConnectionStringTextBox.Text = picker.SelectedConnectionString;
+        _selectedConnectionProfileId = picker.SelectedProfileId;
+        _selectedConnectionProfileName = picker.SelectedProfileName;
+        UpdateConnectionSummaryDisplay();
+    }
+
+    private void UpdateConnectionSummaryDisplay()
+    {
+        ConnectionSummaryTextBlock.Text = _selectedConnectionProfileName is { Length: > 0 } name
+            ? name
+            : string.IsNullOrWhiteSpace(ConnectionStringTextBox.Text)
+                ? "No connection set"
+                : "Custom connection";
+    }
+
     private async Task ConnectToDatabaseAsync(bool triggeredOnStartup)
     {
         if (!TryGetConnectionString(out var connectionString, showMissingStatus: !triggeredOnStartup))
@@ -325,6 +356,11 @@ public partial class MainWindow : Window
         {
             SetStatus("Connected successfully.");
             ConnectionStatusIndicator.Fill = (Brush)FindResource("AccentBrush");
+            if (_selectedConnectionProfileId is { } profileId)
+            {
+                await _connectionProfileStoreService.TouchLastUsedAsync(profileId, CancellationToken.None);
+            }
+
             await LoadSchemaMetadataAsync(connectionString);
         }
         else

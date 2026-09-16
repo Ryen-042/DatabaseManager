@@ -682,13 +682,38 @@
                           Stroke="{DynamicResource TextSecondaryBrush}"
                           StrokeThickness="1.5"
                           StrokeLineJoin="Round" />
-                    <!-- Text="Server=.;Database=master;Trusted_Connection=True;TrustServerCertificate=True;" -->
-                    <TextBox x:Name="ConnectionStringTextBox"
-                             Width="Auto"
-                             MinWidth="260"
-                             Margin="0,0,8,0"
-                             VerticalContentAlignment="Center"
-                             ToolTip="SQL Server connection string" />
+                    <!-- Actual value source for TryGetConnectionString() etc. - no longer the
+                         visible control (see ConnectionSummaryButton below), so a saved
+                         profile's decrypted string / a raw string typed in the picker's Raw
+                         tab don't have to round-trip through a second control. Kept, not
+                         removed, so every existing ConnectionStringTextBox.Text reference in
+                         code-behind keeps working unchanged. -->
+                    <TextBox x:Name="ConnectionStringTextBox" Visibility="Collapsed" />
+
+                    <Button x:Name="ConnectionSummaryButton"
+                            MinWidth="220"
+                            Margin="0,0,8,0"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            ToolTip="Choose a saved connection or enter one directly"
+                            Click="ConnectionSummaryButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="ConnectionSummaryTextBlock"
+                                       Text="No connection set"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="220"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            <Path Data="{StaticResource Icon.ChevronDown}"
+                                  Width="10"
+                                  Height="10"
+                                  Margin="8,0,0,0"
+                                  Stretch="Uniform"
+                                  VerticalAlignment="Center"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1.8" />
+                        </StackPanel>
+                    </Button>
+
                     <TextBlock Text="Timeout"
                                Margin="0,0,6,0"
                                VerticalAlignment="Center"
