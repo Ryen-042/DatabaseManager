@@ -2185,12 +2185,16 @@ public partial class MainWindow : Window
         {
             // Covers both orderings: type/load the placeholder while a table is already
             // selected (this), or select a table after the placeholder is already there
-            // (handled by OnSchemaTableSelected). SubstituteTableNamePlaceholder is a no-op
-            // once the placeholder is gone, so the re-entrant TextChanged this triggers
-            // terminates after one extra pass.
+            // (handled by OnSchemaTableSelected). Deferred via Dispatcher rather than run
+            // inline - AvalonEdit is still mid-way through its own text replace here (an
+            // undo group is open), and writing to editor.Text synchronously from inside this
+            // handler throws "No undo group should be open at this point". Once deferred,
+            // SubstituteTableNamePlaceholder is a no-op the moment the placeholder is gone,
+            // so the extra TextChanged pass it triggers terminates on its own.
             if (_selectedTable is not null)
             {
-                SubstituteTableNamePlaceholder(_selectedTable);
+                var table = _selectedTable;
+                Dispatcher.BeginInvoke(new Action(() => SubstituteTableNamePlaceholder(table)), DispatcherPriority.Background);
             }
 
             if (_isSettingQueryTextProgrammatically)
