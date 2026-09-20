@@ -2183,6 +2183,16 @@ public partial class MainWindow : Window
     {
         if (ReferenceEquals(sender, QueryTextBox))
         {
+            // Covers both orderings: type/load the placeholder while a table is already
+            // selected (this), or select a table after the placeholder is already there
+            // (handled by OnSchemaTableSelected). SubstituteTableNamePlaceholder is a no-op
+            // once the placeholder is gone, so the re-entrant TextChanged this triggers
+            // terminates after one extra pass.
+            if (_selectedTable is not null)
+            {
+                SubstituteTableNamePlaceholder(_selectedTable);
+            }
+
             if (_isSettingQueryTextProgrammatically)
             {
                 return;
