@@ -118,4 +118,15 @@ public sealed class QueryOutputModeParserTests
     {
         Assert.Equal(expected, QueryOutputModeParser.IsCreateOrAlterRoutineStatement(sql));
     }
+
+    [Theory]
+    [InlineData("-- header comment\nCREATE PROCEDURE dbo.MyProc @Id INT AS BEGIN SELECT 1; END;")]
+    [InlineData("/****** Object:  StoredProcedure [dbo].[MyProc] ******/\nCREATE PROCEDURE dbo.MyProc @Id INT AS BEGIN SELECT 1; END;")]
+    [InlineData("/* block comment */\n-- line comment\nALTER PROCEDURE dbo.MyProc @Id INT AS BEGIN SELECT 1; END;")]
+    [InlineData("  -- leading whitespace then comment\nCREATE OR ALTER PROCEDURE dbo.MyProc @Id INT AS BEGIN SELECT 1; END;")]
+    public void ExtractParameterNames_ReturnsEmptyForCreateOrAlterRoutineStatements_WithLeadingComments(string sql)
+    {
+        Assert.True(QueryOutputModeParser.IsCreateOrAlterRoutineStatement(sql));
+        Assert.Empty(QueryOutputModeParser.ExtractParameterNames(sql));
+    }
 }

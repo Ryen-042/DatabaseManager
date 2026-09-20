@@ -1112,23 +1112,20 @@ public partial class MainWindow : Window
         var editors = new[] { _sqlEditor, _editRowsSqlEditor };
         foreach (var editor in editors)
         {
-            if (editor?.Text?.Contains("TableName", StringComparison.Ordinal) != true)
+            if (editor?.Text is null)
             {
                 continue;
             }
 
-            var newText = Regex.Replace(
-                editor.Text,
-                @"\[TableName\]|TableName",
-                $"[{selectedTable.SchemaName}].[{selectedTable.TableName}]",
-                RegexOptions.Compiled);
-
-            if (!string.Equals(editor.Text, newText, StringComparison.Ordinal))
+            var newText = TableNamePlaceholderSubstitution.TrySubstitute(editor.Text, selectedTable.SchemaName, selectedTable.TableName);
+            if (newText is null)
             {
-                var caretPos = editor.CaretIndex;
-                editor.Text = newText;
-                editor.CaretIndex = Math.Min(caretPos, editor.Text.Length);
+                continue;
             }
+
+            var caretPos = editor.CaretIndex;
+            editor.Text = newText;
+            editor.CaretIndex = Math.Min(caretPos, editor.Text.Length);
         }
     }
 

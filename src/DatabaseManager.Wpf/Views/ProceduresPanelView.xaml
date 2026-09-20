@@ -30,6 +30,10 @@
                 <ContextMenu>
                     <MenuItem Header="Generate EXEC" Command="{Binding PlacementTarget.DataContext.GenerateExecCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                     <MenuItem Header="Open In Runner" Command="{Binding PlacementTarget.DataContext.OpenInRunnerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <Separator />
+                    <MenuItem Header="Generate ALTER Script" Command="{Binding PlacementTarget.DataContext.GenerateAlterProcedureScriptCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <MenuItem Header="Drop Procedure" Command="{Binding PlacementTarget.DataContext.GenerateDropProcedureScriptCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <Separator />
                     <MenuItem Header="Copy Name" Command="{Binding PlacementTarget.DataContext.CopySelectedObjectNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                 </ContextMenu>
             </ListBox.ContextMenu>

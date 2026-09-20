@@ -33,6 +33,10 @@
                     <MenuItem Header="Generate UPDATE" Command="{Binding PlacementTarget.DataContext.GenerateUpdateCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                     <MenuItem Header="Generate DELETE" Command="{Binding PlacementTarget.DataContext.GenerateDeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                     <MenuItem Header="Get Table SQL Schema" Command="{Binding PlacementTarget.DataContext.GenerateTableSchemaCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <Separator />
+                    <MenuItem Header="Drop Table" Command="{Binding PlacementTarget.DataContext.GenerateDropTableScriptCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <MenuItem Header="Drop + Recreate Table" Command="{Binding PlacementTarget.DataContext.GenerateDropAndCreateTableScriptCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    <Separator />
                     <MenuItem Header="Copy Name" Command="{Binding PlacementTarget.DataContext.CopySelectedObjectNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                 </ContextMenu>
             </ListBox.ContextMenu>

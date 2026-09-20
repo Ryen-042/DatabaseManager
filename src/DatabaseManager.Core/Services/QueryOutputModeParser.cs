@@ -45,7 +45,7 @@ public static class QueryOutputModeParser
             return false;
         }
 
-        var span = sql.AsSpan().TrimStart();
+        var span = SkipLeadingWhitespaceAndComments(sql.AsSpan());
         if (!TryConsumeKeyword(ref span, "CREATE"))
         {
             if (!TryConsumeKeyword(ref span, "ALTER"))
@@ -68,6 +68,31 @@ public static class QueryOutputModeParser
             || TryConsumeKeyword(ref span, "PROC")
             || TryConsumeKeyword(ref span, "FUNCTION")
             || TryConsumeKeyword(ref span, "TRIGGER");
+    }
+
+    private static ReadOnlySpan<char> SkipLeadingWhitespaceAndComments(ReadOnlySpan<char> span)
+    {
+        while (true)
+        {
+            var trimmed = span.TrimStart();
+
+            if (trimmed.StartsWith("--", StringComparison.Ordinal))
+            {
+                var newlineIndex = trimmed.IndexOf('\n');
+                trimmed = newlineIndex < 0 ? ReadOnlySpan<char>.Empty : trimmed[(newlineIndex + 1)..];
+            }
+            else if (trimmed.StartsWith("/*", StringComparison.Ordinal))
+            {
+                var endIndex = trimmed.IndexOf("*/", StringComparison.Ordinal);
+                trimmed = endIndex < 0 ? ReadOnlySpan<char>.Empty : trimmed[(endIndex + 2)..];
+            }
+            else
+            {
+                return trimmed;
+            }
+
+            span = trimmed;
+        }
     }
 
     private static bool TryConsumeKeyword(ref ReadOnlySpan<char> span, string keyword)
