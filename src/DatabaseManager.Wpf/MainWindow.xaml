@@ -6,6 +6,7 @@
     xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
     xmlns:controls="clr-namespace:DatabaseManager.Wpf.Controls"
     xmlns:views="clr-namespace:DatabaseManager.Wpf.Views"
+    xmlns:behaviors="clr-namespace:DatabaseManager.Wpf.Behaviors"
         mc:Ignorable="d"
         Title="Database Manager"
         Height="860"
@@ -194,7 +195,7 @@
                                           SelectionUnit="CellOrRowHeader"
                                           CanUserAddRows="True"
                                           CanUserDeleteRows="False"
-                                          Loaded="DataGrid_Loaded"
+                                          behaviors:DataGridBehaviors.ResetHorizontalScrollOnLoad="True"
                                           LoadingRow="EditRowsDataGrid_LoadingRow"
                                           CurrentCellChanged="EditRowsDataGrid_CurrentCellChanged"
                                           CellEditEnding="EditRowsDataGrid_CellEditEnding"
@@ -308,7 +309,7 @@
                                           CanUserAddRows="False"
                                           CanUserDeleteRows="False"
                                           ItemsSource="{Binding ProcedureRunner.Parameters}"
-                                          Loaded="DataGrid_Loaded"
+                                          behaviors:DataGridBehaviors.ResetHorizontalScrollOnLoad="True"
                                           PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Parameter"

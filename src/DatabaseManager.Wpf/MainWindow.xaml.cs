@@ -19,6 +19,7 @@ using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
 using CommunityToolkit.Mvvm.Input;
 using DatabaseManager.Wpf.Commands;
+using DatabaseManager.Wpf.Converters;
 using DatabaseManager.Wpf.Editors;
 using DatabaseManager.Wpf.SqlSuggestions;
 using DatabaseManager.Wpf.ViewModels;
@@ -601,26 +602,6 @@ public partial class MainWindow : Window
     {
         ApplyEditRowsRowVisualState(e.Row);
         ApplyEditRowsCornerButtonStyle();
-    }
-
-    private void DataGrid_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is DataGrid dataGrid)
-        {
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                ResetDataGridHorizontalScroll(dataGrid);
-            }));
-        }
-    }
-
-    private void ResetDataGridHorizontalScroll(DataGrid dataGrid)
-    {
-        var scrollViewer = FindDescendant<ScrollViewer>(dataGrid);
-        if (scrollViewer != null)
-        {
-            scrollViewer.ScrollToHorizontalOffset(0);
-        }
     }
 
     private void EditRowsDataGrid_CurrentCellChanged(object? sender, EventArgs e)
@@ -1726,19 +1707,6 @@ public partial class MainWindow : Window
         }
 
         return value[..maxLength] + "...";
-    }
-
-    private sealed class ResultValueConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-        {
-            return DisplayValueFormatter.FormatForDisplay(value);
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-        {
-            return value;
-        }
     }
 
     private void ExitEditModeAndClearEditableRows()

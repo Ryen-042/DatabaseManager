@@ -6,19 +6,19 @@ DatabaseManager combines query authoring, schema exploration, template managemen
 
 ## Highlights
 
-- SQL editor tab with multiline query authoring.
-- Schema Assistant panel for tables, procedures, and query templates.
-- Query generation helpers (SELECT, INSERT, UPDATE, DELETE, EXEC, and table schema script).
-- Query template persistence in local app data.
-- Result viewing and export to CSV and Excel.
+- SQL editor tab with multiline query authoring, context-aware autocomplete (keywords, tables, columns, FK-based join hints, recent fragments), and multi-batch script execution (`GO`-separated batches run sequentially, so a copied "Script as CREATE" with `USE`/`SET .../GO` boilerplate just works).
+- Schema Assistant panel for tables, procedures, and query templates, with script-generation context menus (SELECT/INSERT/UPDATE/DELETE/EXEC, Drop/Drop+Recreate Table, Drop Procedure/Generate ALTER Script).
+- Saved connection profiles (DPAPI-encrypted at rest) alongside a raw connection-string fallback, with a designatable default that auto-connects on startup.
+- Command palette (Ctrl+Shift+P), searchable shortcuts help panel (Ctrl+/), and a top menu — all driven from one command registry, so they never drift out of sync.
+- Result viewing and export to CSV and Excel, with expandable per-statement sections for multi-statement/multi-batch results, and cell/row marking.
 - Stored procedure runner with parameter input.
 - Edit Rows mode:
   - Load `TOP (N)` rows from a selected table.
   - Optional `WHERE` predicate and `ORDER BY` expression.
-  - Two-way sync between filter inputs and generated editable SQL.
-  - PK-based update and delete operations in SQL transactions.
-- Dark and light themes.
-- Object Explorer toggle and keyboard shortcuts.
+  - Two-way sync between filter inputs and generated editable SQL, with comments in custom SQL preserved across mode toggles.
+  - PK-based update and delete operations in SQL transactions; deleting without a primary key uses a user-selected-column predicate with an intended-vs-matched row-count safeguard.
+- Dark and light themes, toast notifications for background failures, hand-authored vector icons throughout.
+- Schema Assistant panel toggle and keyboard shortcuts.
 
 ## Screenshots
 
@@ -92,9 +92,10 @@ make test CONFIG=Debug
 
 ### 1. Connect and load metadata
 
-1. Enter a SQL Server connection string in the bottom connection panel.
-2. Set timeout in seconds.
-3. Click **Test** to validate and load schema metadata.
+1. Click the connection summary button in the toolbar to open the connection picker.
+2. Either pick a saved profile or enter a raw connection string on the picker's fallback tab; optionally mark a profile as the default so it auto-connects on startup.
+3. Set the timeout (seconds) in the toolbar.
+4. Connecting loads schema metadata automatically.
 
 ### 2. Browse schema
 
@@ -145,13 +146,23 @@ In **Results** tab:
 
 ## Keyboard Shortcuts
 
-- `Ctrl+E`: Run query
+- `Ctrl+1`..`Ctrl+5`: Switch output tabs (Edit Rows/SQL Editor/Schema/Results/Procedure Runner)
+- `Ctrl+E`: Run query, or refresh Edit Rows if that tab is active
 - `Ctrl+Q`: Cancel running query
+- `Ctrl+R`: Refresh Edit Rows
+- `Ctrl+S`: Save Edit Rows changes
+- `Ctrl+Space`: Trigger SQL suggestions (Up/Down/Enter/Tab/Escape to navigate)
+- `Ctrl+Shift+P`: Open the command palette
+- `Ctrl+/`: Open the shortcuts help panel
+
+The palette and help panel always reflect the full, current set — check there if this list drifts.
 
 ## Data and Storage
 
 - Query templates are stored in:
   - `%LocalAppData%/DatabaseManager/query-templates.json`
+- Saved connection profiles (connection strings DPAPI-encrypted) are stored in:
+  - `%LocalAppData%/DatabaseManager/connection-profiles.json`
 
 ## Security and Safety Notes
 
@@ -163,8 +174,8 @@ In **Results** tab:
 ## Known Limitations
 
 - Focused on SQL Server (`Microsoft.Data.SqlClient`).
-- Edit Rows update/delete requires table primary key metadata.
-- Query execution is single batch per run button action.
+- Edit Rows update/delete without a primary key relies on a user-selected-column predicate with a row-count safeguard, since there's no other reliable way to identify a specific row.
+- One SQL Editor/Results pair at a time — no multi-tab query documents yet.
 
 ## Documentation
 
@@ -175,11 +186,7 @@ In **Results** tab:
 
 ## Testing Coverage
 
-Current tests include:
-
-- Export service behavior
-- Query assistant SQL generation
-- Template storage CRUD behavior
+168 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction and the no-PK delete safeguard, procedure parameter mapping, query-assistant SQL generation, template/connection-profile/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
 
 See: [tests/DatabaseManager.Tests](tests/DatabaseManager.Tests)
 
