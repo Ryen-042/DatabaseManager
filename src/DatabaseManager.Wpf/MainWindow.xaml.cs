@@ -58,7 +58,6 @@ public partial class MainWindow : Window
 
     private DataTable? _currentDataTable;
     private bool _currentFullOutputMode;
-    private CancellationTokenSource? _executionCancellationTokenSource;
     private List<TableSchemaInfo> _tables = new();
     private List<StoredProcedureSchemaInfo> _storedProcedures = new();
     private List<ForeignKeySchemaInfo> _foreignKeys = new();
@@ -124,7 +123,23 @@ public partial class MainWindow : Window
             onOpenInRunnerRequested: OnOpenInRunnerRequested,
             onCopyRequested: CopySchemaObjectNameToClipboardAsync,
             setStatus: SetStatus);
-        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant);
+        var queryDocument = new QueryDocumentViewModel(
+            _databaseQueryService,
+            getConnectionString: () => ConnectionStringTextBox.Text.Trim(),
+            getSqlText: () => QueryTextBox.Text,
+            getFullOutputCheckboxState: () => FullOutputCheckBox.IsChecked == true,
+            setFullOutputMode: value => _currentFullOutputMode = value,
+            getTimeoutSeconds: ParseTimeoutSeconds,
+            promptForParameters: names =>
+            {
+                var proceed = TryPromptForQueryParameters(names, out var promptedParameters);
+                return (proceed, promptedParameters);
+            },
+            trackRecentSqlFragments: TrackRecentSqlFragments,
+            setStatus: SetStatus,
+            onResult: DisplayExecutionResult,
+            onBusyChanged: SetExecutionState);
+        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant, queryDocument);
         DataContext = ViewModel;
         RegisterCommands();
         BuildInputBindings();
@@ -229,12 +244,12 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    RunQueryButton_Click(RunQueryButton, new RoutedEventArgs());
+                    ViewModel.QueryDocument.RunCommand.Execute(null);
                 }
             }), "Icon.Run");
 
         Reg("query.cancel", "Cancel Execution", "Query", new KeyGesture(Key.Q, ModifierKeys.Control),
-            new RelayCommand(() => CancelButton_Click(CancelButton, new RoutedEventArgs())), "Icon.Stop");
+            new RelayCommand(() => ViewModel.QueryDocument.CancelCommand.Execute(null)), "Icon.Stop");
 
         Reg("editRows.refresh", "Refresh Edit Rows", "Edit Rows", new KeyGesture(Key.R, ModifierKeys.Control),
             new AsyncRelayCommand(() => OutputTabControl.SelectedIndex == OutputEditRowsTabIndex
@@ -414,75 +429,6 @@ public partial class MainWindow : Window
         SetExecutionState(false);
     }
 
-    private async void RunQueryButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return;
-        }
-
-        var sql = QueryTextBox.Text;
-
-        if (string.IsNullOrWhiteSpace(sql))
-        {
-            SetStatus("SQL query is required.");
-            return;
-        }
-
-        var outputMode = QueryOutputModeParser.Parse(sql);
-        var sqlToExecute = outputMode.Sql;
-        if (string.IsNullOrWhiteSpace(sqlToExecute))
-        {
-            SetStatus("SQL query is required.");
-            return;
-        }
-
-        var fullOutputEnabled = outputMode.HasFullDirective || FullOutputCheckBox.IsChecked == true;
-        _currentFullOutputMode = fullOutputEnabled;
-        TrackRecentSqlFragments(sqlToExecute);
-
-        var parameterNames = QueryBatchSplitter.Split(sqlToExecute)
-            .SelectMany(QueryOutputModeParser.ExtractParameterNames)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        IReadOnlyList<QueryParameterValue> queryParameters = Array.Empty<QueryParameterValue>();
-        if (parameterNames.Count > 0)
-        {
-            if (!TryPromptForQueryParameters(parameterNames, out queryParameters))
-            {
-                SetStatus("Query execution canceled.");
-                return;
-            }
-        }
-
-        _executionCancellationTokenSource?.Dispose();
-        _executionCancellationTokenSource = new CancellationTokenSource();
-
-        SetExecutionState(true);
-        SetStatus(fullOutputEnabled ? "Executing query (full output mode)..." : "Executing query...");
-
-        var result = queryParameters.Count == 0
-            ? await _databaseQueryService.ExecuteAsync(
-                connectionString,
-                sqlToExecute,
-                ParseTimeoutSeconds(),
-                _executionCancellationTokenSource.Token)
-            : await _databaseQueryService.ExecuteAsync(
-                connectionString,
-                sqlToExecute,
-                queryParameters,
-                ParseTimeoutSeconds(),
-                _executionCancellationTokenSource.Token);
-
-        DisplayExecutionResult("Query", result);
-        SetExecutionState(false);
-    }
-
-    private void CancelButton_Click(object sender, RoutedEventArgs e)
-    {
-        _executionCancellationTokenSource?.Cancel();
-        SetStatus("Cancellation requested...");
-    }
 
     private void OnTemplateActivated(string name, string sql)
     {
@@ -1268,27 +1214,25 @@ public partial class MainWindow : Window
 
         for (var i = 0; i < resultSets.Count; i++)
         {
-            var resultSet = resultSets[i];
+            var resultSetViewModel = new ResultSetViewModel(resultSets[i]);
             var expander = new Expander
             {
                 Margin = new Thickness(0, 0, 0, 8),
                 IsExpanded = i == 0,
-                Header = resultSet.DataTable is null
-                    ? $"{resultSet.Title} ({resultSet.AffectedRows} affected rows)"
-                    : $"{resultSet.Title} ({resultSet.DataTable.Rows.Count} rows, {resultSet.DataTable.Columns.Count} columns)"
+                Header = resultSetViewModel.HeaderText
             };
 
-            if (resultSet.DataTable is null)
+            if (resultSetViewModel.DataTable is null)
             {
                 expander.Content = new TextBlock
                 {
                     Margin = new Thickness(8),
-                    Text = $"No tabular rows. Affected rows: {resultSet.AffectedRows}."
+                    Text = $"No tabular rows. Affected rows: {resultSetViewModel.AffectedRows}."
                 };
             }
             else
             {
-                var dataGrid = CreateResultDataGrid(resultSet.DataTable);
+                var dataGrid = CreateResultDataGrid(resultSetViewModel.DataTable);
                 expander.Content = dataGrid;
             }
 
@@ -1521,9 +1465,7 @@ public partial class MainWindow : Window
 
     private void SetExecutionState(bool isExecuting)
     {
-        RunQueryButton.IsEnabled = !isExecuting;
         ConnectButton.IsEnabled = !isExecuting;
-        CancelButton.IsEnabled = isExecuting;
         SaveRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
         DiscardRowChangesButton.IsEnabled = _isEditMode && !isExecuting;
         DeleteRowMenuItem.IsEnabled = _isEditMode && !isExecuting;
@@ -2183,6 +2125,8 @@ public partial class MainWindow : Window
     {
         if (ReferenceEquals(sender, QueryTextBox))
         {
+            ViewModel.QueryDocument.MarkDirty();
+
             // Covers both orderings: type/load the placeholder while a table is already
             // selected (this), or select a table after the placeholder is already there
             // (handled by OnSchemaTableSelected). Deferred via Dispatcher rather than run

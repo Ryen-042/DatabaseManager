@@ -1,3 +1,4 @@
+using DatabaseManager.Core.Models;
 using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
 using DatabaseManager.Wpf.Commands;
@@ -30,10 +31,32 @@ public sealed class MainWindowViewModelTests
         onCopyRequested: _ => Task.CompletedTask,
         setStatus: _ => { });
 
+    private static QueryDocumentViewModel CreateQueryDocument() => new(
+        new NullDatabaseQueryService(),
+        getConnectionString: () => string.Empty,
+        getSqlText: () => string.Empty,
+        getFullOutputCheckboxState: () => false,
+        setFullOutputMode: _ => { },
+        getTimeoutSeconds: () => 30,
+        promptForParameters: _ => (true, Array.Empty<QueryParameterValue>()),
+        trackRecentSqlFragments: _ => { },
+        setStatus: _ => { },
+        onResult: (_, _) => { },
+        onBusyChanged: _ => { });
+
+    private sealed class NullDatabaseQueryService : IDatabaseQueryService
+    {
+        public Task<QueryExecutionResult> ExecuteAsync(string connectionString, string sql, int commandTimeoutSeconds, CancellationToken cancellationToken)
+            => Task.FromResult(new QueryExecutionResult { IsSuccess = true });
+
+        public Task<QueryExecutionResult> ExecuteAsync(string connectionString, string sql, IReadOnlyList<QueryParameterValue> parameters, int commandTimeoutSeconds, CancellationToken cancellationToken)
+            => Task.FromResult(new QueryExecutionResult { IsSuccess = true });
+    }
+
     [Fact]
     public void Defaults_AreDarkModeAndSchemaAssistantVisible()
     {
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
 
         Assert.True(vm.IsDarkMode);
         Assert.True(vm.IsSchemaAssistantVisible);
@@ -43,7 +66,7 @@ public sealed class MainWindowViewModelTests
     public void SettingIsDarkMode_InvokesCallbackWithNewValue()
     {
         bool? observed = null;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), value => observed = value, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), value => observed = value, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
 
         vm.IsDarkMode = false;
 
@@ -54,7 +77,7 @@ public sealed class MainWindowViewModelTests
     public void SettingIsSchemaAssistantVisible_InvokesCallbackWithNewValue()
     {
         bool? observed = null;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, value => observed = value, CreateTemplatesPanel(), CreateSchemaAssistant());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, value => observed = value, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
 
         vm.IsSchemaAssistantVisible = false;
 
@@ -65,7 +88,7 @@ public sealed class MainWindowViewModelTests
     public void SettingSameValue_DoesNotInvokeCallback()
     {
         var invocationCount = 0;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => invocationCount++, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => invocationCount++, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
 
         vm.IsDarkMode = true; // already the default value
 
@@ -76,7 +99,7 @@ public sealed class MainWindowViewModelTests
     public void CommandRegistry_IsExposedAsGiven()
     {
         var registry = new AppCommandRegistry();
-        var vm = new MainWindowViewModel(registry, _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant());
+        var vm = new MainWindowViewModel(registry, _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
 
         Assert.Same(registry, vm.CommandRegistry);
     }
@@ -85,7 +108,7 @@ public sealed class MainWindowViewModelTests
     public void TemplatesPanel_IsExposedAsGiven()
     {
         var templatesPanel = CreateTemplatesPanel();
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, templatesPanel, CreateSchemaAssistant());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, templatesPanel, CreateSchemaAssistant(), CreateQueryDocument());
 
         Assert.Same(templatesPanel, vm.TemplatesPanel);
     }
@@ -94,8 +117,17 @@ public sealed class MainWindowViewModelTests
     public void SchemaAssistant_IsExposedAsGiven()
     {
         var schemaAssistant = CreateSchemaAssistant();
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), schemaAssistant);
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), schemaAssistant, CreateQueryDocument());
 
         Assert.Same(schemaAssistant, vm.SchemaAssistant);
+    }
+
+    [Fact]
+    public void QueryDocument_IsExposedAsGiven()
+    {
+        var queryDocument = CreateQueryDocument();
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), queryDocument);
+
+        Assert.Same(queryDocument, vm.QueryDocument);
     }
 }

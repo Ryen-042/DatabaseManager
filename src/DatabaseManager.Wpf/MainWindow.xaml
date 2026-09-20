@@ -423,7 +423,7 @@
                     <Button x:Name="RunQueryButton"
                             Margin="0,0,8,0"
                             Style="{StaticResource PrimaryButtonStyle}"
-                            Click="RunQueryButton_Click">
+                            Command="{Binding QueryDocument.RunCommand}">
                         <StackPanel Orientation="Horizontal">
                             <Path Data="{StaticResource Icon.Run}"
                                   Width="13"
@@ -436,8 +436,7 @@
                     </Button>
                     <Button x:Name="CancelButton"
                             Style="{StaticResource DestructiveButtonStyle}"
-                            IsEnabled="False"
-                            Click="CancelButton_Click">
+                            Command="{Binding QueryDocument.CancelCommand}">
                         <StackPanel Orientation="Horizontal">
                             <Path Data="{StaticResource Icon.Stop}"
                                   Width="12"
