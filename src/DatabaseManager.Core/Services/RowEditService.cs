@@ -1,6 +1,5 @@
 using System.Data;
 using System.Globalization;
-using System.Text;
 using DatabaseManager.Core.Models.Editing;
 using DatabaseManager.Core.Models.Schema;
 using Microsoft.Data.SqlClient;
@@ -19,7 +18,7 @@ public sealed class RowEditService : IRowEditService
         int commandTimeoutSeconds,
         CancellationToken cancellationToken)
     {
-        var sql = $"SELECT TOP (@topRows) * FROM [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}]";
+        var sql = $"SELECT TOP (@topRows) * FROM [{RowEditSqlBuilder.EscapeIdentifier(schemaName)}].[{RowEditSqlBuilder.EscapeIdentifier(tableName)}]";
         if (!string.IsNullOrWhiteSpace(filterExpression))
         {
             sql += $" WHERE {filterExpression}";
@@ -117,16 +116,7 @@ public sealed class RowEditService : IRowEditService
 
                 EnsureMatchValues(matchColumns, update.OriginalKeyValues);
 
-                var setClause = string.Join(", ", setColumns.Select(c => $"[{EscapeIdentifier(c)}] = @set_{c}"));
-                var whereClause = BuildNullSafeWhereClause(matchColumns);
-                var sql = $"UPDATE [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] SET {setClause} WHERE {whereClause};";
-
-                if (primaryKeys.Count == 0)
-                {
-                    sql += Environment.NewLine
-                        + "IF @@ROWCOUNT <> 1" + Environment.NewLine
-                        + "    THROW 50000, 'Cannot save changes because the row is not uniquely identifiable without a primary key.', 1;";
-                }
+                var sql = RowEditSqlBuilder.BuildUpdateStatement(schemaName, tableName, setColumns, matchColumns, hasPrimaryKey: primaryKeys.Count > 0);
 
                 await using var command = new SqlCommand(sql, connection, transaction)
                 {
@@ -157,9 +147,7 @@ public sealed class RowEditService : IRowEditService
                     continue;
                 }
 
-                var columnClause = string.Join(", ", valueColumns.Select(c => $"[{EscapeIdentifier(c)}]"));
-                var valuesClause = string.Join(", ", valueColumns.Select(c => $"@ins_{c}"));
-                var sql = $"INSERT INTO [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] ({columnClause}) VALUES ({valuesClause});";
+                var sql = RowEditSqlBuilder.BuildInsertStatement(schemaName, tableName, valueColumns);
 
                 await using var command = new SqlCommand(sql, connection, transaction)
                 {
@@ -201,8 +189,7 @@ public sealed class RowEditService : IRowEditService
 
         EnsurePrimaryKeyValues(primaryKeys, keyValues);
 
-        var whereClause = string.Join(" AND ", primaryKeys.Select(c => $"[{EscapeIdentifier(c)}] = @key_{c}"));
-        var sql = $"DELETE FROM [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] WHERE {whereClause};";
+        var sql = RowEditSqlBuilder.BuildDeleteByPrimaryKeyStatement(schemaName, tableName, primaryKeys);
 
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -257,7 +244,7 @@ public sealed class RowEditService : IRowEditService
             };
         }
 
-        var generatedSql = BuildGeneratedDeleteSql(schemaName, tableName, selectedColumns, selectedRows);
+        var generatedSql = RowEditSqlBuilder.BuildGeneratedDeleteSql(schemaName, tableName, selectedColumns, selectedRows);
 
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -269,7 +256,7 @@ public sealed class RowEditService : IRowEditService
 
             foreach (var row in selectedRows)
             {
-                var countSql = BuildCountSql(schemaName, tableName, selectedColumns);
+                var countSql = RowEditSqlBuilder.BuildCountSql(schemaName, tableName, selectedColumns);
                 await using var countCommand = new SqlCommand(countSql, connection, transaction)
                 {
                     CommandTimeout = commandTimeoutSeconds
@@ -300,7 +287,7 @@ public sealed class RowEditService : IRowEditService
             var deletedRows = 0;
             foreach (var row in selectedRows)
             {
-                var deleteSql = BuildDeleteTopOneSql(schemaName, tableName, selectedColumns);
+                var deleteSql = RowEditSqlBuilder.BuildDeleteTopOneSql(schemaName, tableName, selectedColumns);
                 await using var deleteCommand = new SqlCommand(deleteSql, connection, transaction)
                 {
                     CommandTimeout = commandTimeoutSeconds
@@ -326,11 +313,6 @@ public sealed class RowEditService : IRowEditService
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
-    }
-
-    private static string EscapeIdentifier(string value)
-    {
-        return value.Replace("]", "]]", StringComparison.Ordinal);
     }
 
     private static object ToDbValue(object? value)
@@ -360,30 +342,6 @@ public sealed class RowEditService : IRowEditService
         EnsureMatchValues(primaryKeys, keyValues);
     }
 
-    private static string BuildNullSafeWhereClause(IReadOnlyList<string> columns)
-    {
-        return string.Join(" AND ", columns.Select(column =>
-            $"((@key_{column} IS NULL AND [{EscapeIdentifier(column)}] IS NULL) OR [{EscapeIdentifier(column)}] = @key_{column})"));
-    }
-
-    private static string BuildCountSql(string schemaName, string tableName, IReadOnlyList<string> selectedColumns)
-    {
-        var whereClause = BuildWhereClauseForSelectedColumns(selectedColumns, parameterPrefix: string.Empty);
-        return $"SELECT COUNT(1) FROM [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] WHERE {whereClause};";
-    }
-
-    private static string BuildDeleteTopOneSql(string schemaName, string tableName, IReadOnlyList<string> selectedColumns)
-    {
-        var whereClause = BuildWhereClauseForSelectedColumns(selectedColumns, parameterPrefix: string.Empty);
-        return $"DELETE TOP (1) FROM [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}] WHERE {whereClause};";
-    }
-
-    private static string BuildWhereClauseForSelectedColumns(IReadOnlyList<string> selectedColumns, string parameterPrefix)
-    {
-        return string.Join(" AND ", selectedColumns.Select(column =>
-            $"((@{parameterPrefix}{column} IS NULL AND [{EscapeIdentifier(column)}] IS NULL) OR [{EscapeIdentifier(column)}] = @{parameterPrefix}{column})"));
-    }
-
     private static void AddPredicateParameters(
         SqlCommand command,
         IReadOnlyList<string> selectedColumns,
@@ -399,64 +357,5 @@ public sealed class RowEditService : IRowEditService
 
             command.Parameters.AddWithValue($"@{parameterPrefix}{column}", ToDbValue(value));
         }
-    }
-
-    private static string BuildGeneratedDeleteSql(
-        string schemaName,
-        string tableName,
-        IReadOnlyList<string> selectedColumns,
-        IReadOnlyList<IReadOnlyDictionary<string, object?>> selectedRows)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"-- Generated delete script for [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}]");
-        sb.AppendLine("-- Review before execution.");
-        sb.AppendLine();
-
-        for (var i = 0; i < selectedRows.Count; i++)
-        {
-            var row = selectedRows[i];
-            var predicates = new List<string>();
-
-            foreach (var column in selectedColumns)
-            {
-                if (!row.TryGetValue(column, out var value))
-                {
-                    throw new InvalidOperationException($"Selected row does not include value for column '{column}'.");
-                }
-
-                if (value is null or DBNull)
-                {
-                    predicates.Add($"[{EscapeIdentifier(column)}] IS NULL");
-                }
-                else
-                {
-                    predicates.Add($"[{EscapeIdentifier(column)}] = {ToSqlLiteral(value)}");
-                }
-            }
-
-            sb.AppendLine($"-- Row {i + 1}");
-            sb.AppendLine($"DELETE TOP (1) FROM [{EscapeIdentifier(schemaName)}].[{EscapeIdentifier(tableName)}]");
-            sb.AppendLine($"WHERE {string.Join(" AND ", predicates)};");
-            sb.AppendLine("GO");
-            sb.AppendLine();
-        }
-
-        return sb.ToString().TrimEnd();
-    }
-
-    private static string ToSqlLiteral(object value)
-    {
-        return value switch
-        {
-            string s => $"N'{s.Replace("'", "''", StringComparison.Ordinal)}'",
-            char c => $"N'{c.ToString().Replace("'", "''", StringComparison.Ordinal)}'",
-            bool b => b ? "1" : "0",
-            DateTime dt => $"'{dt:yyyy-MM-dd HH:mm:ss.fffffff}'",
-            DateTimeOffset dto => $"'{dto:yyyy-MM-dd HH:mm:ss.fffffff zzz}'",
-            byte[] bytes => $"0x{Convert.ToHexString(bytes)}",
-            Guid guid => $"'{guid:D}'",
-            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? "NULL",
-            _ => $"N'{value.ToString()?.Replace("'", "''", StringComparison.Ordinal)}'"
-        };
     }
 }

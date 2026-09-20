@@ -34,7 +34,7 @@ Three projects under one solution (`DatabaseManager.slnx`):
 
 - `src/DatabaseManager.Core` (`net8.0`) — domain models and service implementations, no UI dependency. Interface-driven (`I*Service` + concrete impl) so the WPF layer never talks to ADO.NET directly.
 - `src/DatabaseManager.Wpf` (`net8.0-windows`, WinExe) — presentation layer.
-- `tests/DatabaseManager.Tests` (xUnit) — covers only pure/deterministic `Core` logic; **no database-integration tests exist**. `RowEditService` and `StoredProcedureExecutionService` (the most stateful, DB-coupled services) currently have zero automated coverage — treat changes there as higher-risk and verify manually against a real connection.
+- `tests/DatabaseManager.Tests` (xUnit) — covers only pure/deterministic `Core` logic; **no database-integration tests exist**. `RowEditService` and `StoredProcedureExecutionService` still have zero *direct* coverage (every method opens a real `SqlConnection`), but their actual decision logic - SQL-text construction, the no-PK delete safeguard, NULL-handling - has been pulled out into pure, tested siblings (`RowEditSqlBuilder`, `RowEditQueryTextSync`, `ProcedureParameterMapper`; see the Core services table). Treat the thin DB-I/O wrappers as lower-risk than before, but still verify manually against a real connection when touching them.
 
 ### Core services (`src/DatabaseManager.Core/Services`)
 
@@ -43,8 +43,11 @@ Three projects under one solution (`DatabaseManager.slnx`):
 | `IDatabaseQueryService` / `SqlServerQueryService` | Ad-hoc SQL execution, multi-statement result sets |
 | `IDatabaseSchemaService` / `Schema/SqlServerSchemaService` | Table/column/FK/procedure discovery |
 | `IQueryAssistantService` / `Schema/SqlQueryAssistantService` | Generates SELECT/INSERT/UPDATE/DELETE/EXEC/DROP/ALTER script text |
-| `IStoredProcedureExecutionService` / `Schema/StoredProcedureExecutionService` | Executes a procedure with typed/nullable params, returns results + output params |
-| `IRowEditService` / `RowEditService` | Loads `TOP(N)` rows, saves updates transactionally by PK, deletes by PK or by a user-selected-column predicate (with an intended-vs-matched row-count safeguard when there's no PK) |
+| `IStoredProcedureExecutionService` / `Schema/StoredProcedureExecutionService` | Executes a procedure with typed/nullable params, returns results + output params. NULL-handling for input params (`ProcedureParameterMapper.GetInputValue`) is pulled out as pure logic - a `SendAsNull`-checked or empty/whitespace typed value both become `DBNull.Value` |
+| `Schema/ProcedureParameterMapper` (static) | Pure editor-row → `StoredProcedureExecutionParameter` mapping and the NULL-handling above; exists so this logic is testable without a live connection, unlike `StoredProcedureExecutionService` itself |
+| `IRowEditService` / `RowEditService` | Loads `TOP(N)` rows, saves updates transactionally by PK, deletes by PK or by a user-selected-column predicate (with an intended-vs-matched row-count safeguard when there's no PK). All SQL-text construction (`RowEditSqlBuilder`) is pure and pulled out for the same reason - `RowEditService` itself can't be unit tested since every method opens a `SqlConnection` |
+| `RowEditSqlBuilder` (static) | Pure SQL-text construction for `RowEditService`: UPDATE/INSERT/DELETE statements, the null-safe WHERE-predicate builder shared by primary-key updates and the no-PK delete safeguard, and the human-reviewable generated-DELETE-script text shown when the no-PK safeguard's intended/matched row counts disagree |
+| `RowEditQueryTextSync` (static) | Pure conversion between the Edit Rows tab's structured inputs (Top/Filter/Order By) and its SQL text box, both directions. Doesn't itself implement "don't overwrite in custom mode" - callers (`MainWindow`'s `_isEditRowsCustomQueryMode` guard) gate calls into this so a user's custom SQL/comments are never regenerated over |
 | `ITemplateStoreService` / `TemplateStoreService` | CRUD for saved query templates, JSON-persisted (see below) |
 | `IExportService` / `ExportService` | CSV (`CsvHelper`) / Excel (`ClosedXML`) export |
 | `QueryOutputModeParser` (static) | Parses a trailing `-- full` comment directive to toggle full/untruncated output, strips it before execution; also detects `CREATE`/`ALTER` `PROCEDURE`/`FUNCTION`/`TRIGGER` statements (skipping leading whitespace/comments first) so their `@param` declarations aren't mistaken for query parameters to prompt for. Operates on a single batch - see `QueryBatchSplitter` for scripts with more than one |

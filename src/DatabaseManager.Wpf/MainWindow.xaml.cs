@@ -84,10 +84,6 @@ public partial class MainWindow : Window
     private readonly LinkedList<string> _recentSqlFragments = new();
     private readonly HashSet<string> _recentSqlFragmentLookup = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly Regex EditRowsQueryRegex = new(
-        @"^\s*SELECT\s+(?:TOP\s*\(\s*(?<top>\d+)\s*\)\s+)?\*\s+FROM\s+(?<from>\[[^\]]+\]\.\[[^\]]+\]|\S+)(?:\s+WHERE\s+(?<where>.*?))?(?:\s+ORDER\s+BY\s+(?<order>.*?))?\s*;?\s*$",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
-
     public MainWindow()
     {
         InitializeComponent();
@@ -1096,14 +1092,7 @@ public partial class MainWindow : Window
         SetStatus(_currentFullOutputMode ? "Executing stored procedure (full output mode)..." : "Executing stored procedure...");
 
         var parameters = _runnerParameterRows
-            .Select(x => new StoredProcedureExecutionParameter
-            {
-                Name = x.ParameterName,
-                Value = x.Value,
-                IsOutput = x.IsOutput,
-                IsInputOutput = false,
-                SendAsNull = x.SendAsNull
-            })
+            .Select(x => ProcedureParameterMapper.ToExecutionParameter(x.ParameterName, x.Value, x.SendAsNull, x.IsOutput))
             .ToList();
 
         var result = await _storedProcedureExecutionService.ExecuteAsync(
@@ -2549,60 +2538,11 @@ public partial class MainWindow : Window
             return "-- Select a table to generate an editable-row query.";
         }
 
-        var sql = $"SELECT TOP ({topRows}) *{Environment.NewLine}FROM [{_selectedTable.SchemaName}].[{_selectedTable.TableName}]";
-
-        if (!string.IsNullOrWhiteSpace(filter))
-        {
-            sql += $"{Environment.NewLine}WHERE {filter}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(orderBy))
-        {
-            sql += $"{Environment.NewLine}ORDER BY {orderBy}";
-        }
-
-        sql += ";";
-        return sql;
+        return RowEditQueryTextSync.BuildQuery(_selectedTable.SchemaName, _selectedTable.TableName, topRows, filter, orderBy);
     }
 
     private static bool TryParseEditRowsQuery(string sql, out int topRows, out string? filter, out string? orderBy)
-    {
-        topRows = 200;
-        filter = null;
-        orderBy = null;
-
-        var match = EditRowsQueryRegex.Match(sql ?? string.Empty);
-        if (!match.Success)
-        {
-            return false;
-        }
-
-        if (match.Groups["top"].Success
-            && (!int.TryParse(match.Groups["top"].Value, out topRows) || topRows <= 0))
-        {
-            return false;
-        }
-
-        filter = match.Groups["where"].Success
-            ? match.Groups["where"].Value.Trim()
-            : null;
-
-        orderBy = match.Groups["order"].Success
-            ? match.Groups["order"].Value.Trim().TrimEnd(';')
-            : null;
-
-        if (string.IsNullOrWhiteSpace(filter))
-        {
-            filter = null;
-        }
-
-        if (string.IsNullOrWhiteSpace(orderBy))
-        {
-            orderBy = null;
-        }
-
-        return true;
-    }
+        => RowEditQueryTextSync.TryParse(sql, out topRows, out filter, out orderBy);
 
     private void EditRowsCustomQueryModeCheckBox_Checked(object sender, RoutedEventArgs e)
     {

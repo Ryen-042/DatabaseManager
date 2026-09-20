@@ -31,7 +31,7 @@ public sealed class StoredProcedureExecutionService : IStoredProcedureExecutionS
 
             foreach (var parameter in parameters)
             {
-                var sqlParameter = new SqlParameter(parameter.Name, GetInputValue(parameter));
+                var sqlParameter = new SqlParameter(parameter.Name, ProcedureParameterMapper.GetInputValue(parameter));
                 if (parameter.IsInputOutput)
                 {
                     sqlParameter.Direction = ParameterDirection.InputOutput;
@@ -118,21 +118,6 @@ public sealed class StoredProcedureExecutionService : IStoredProcedureExecutionS
                 ResultSets = null
             };
         }
-    }
-
-    private static object GetInputValue(StoredProcedureExecutionParameter parameter)
-    {
-        if (parameter.SendAsNull)
-        {
-            return DBNull.Value;
-        }
-
-        if (string.IsNullOrWhiteSpace(parameter.Value))
-        {
-            return DBNull.Value;
-        }
-
-        return parameter.Value;
     }
 
     private static async Task<DataTable> ReadCurrentResultSetAsync(SqlDataReader reader, CancellationToken cancellationToken)
