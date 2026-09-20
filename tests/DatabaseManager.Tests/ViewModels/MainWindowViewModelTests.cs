@@ -1,4 +1,5 @@
 using DatabaseManager.Core.Models;
+using DatabaseManager.Core.Models.Schema;
 using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
 using DatabaseManager.Wpf.Commands;
@@ -44,6 +45,16 @@ public sealed class MainWindowViewModelTests
         onResult: (_, _) => { },
         onBusyChanged: _ => { });
 
+    private static ProcedureRunnerViewModel CreateProcedureRunner() => new(
+        new NullStoredProcedureExecutionService(),
+        getConnectionString: () => string.Empty,
+        getFullOutputCheckboxState: () => false,
+        setFullOutputMode: _ => { },
+        getTimeoutSeconds: () => 30,
+        setStatus: _ => { },
+        onResult: (_, _) => { },
+        onBusyChanged: _ => { });
+
     private sealed class NullDatabaseQueryService : IDatabaseQueryService
     {
         public Task<QueryExecutionResult> ExecuteAsync(string connectionString, string sql, int commandTimeoutSeconds, CancellationToken cancellationToken)
@@ -53,10 +64,16 @@ public sealed class MainWindowViewModelTests
             => Task.FromResult(new QueryExecutionResult { IsSuccess = true });
     }
 
+    private sealed class NullStoredProcedureExecutionService : IStoredProcedureExecutionService
+    {
+        public Task<QueryExecutionResult> ExecuteAsync(string connectionString, string schemaName, string procedureName, IReadOnlyList<StoredProcedureExecutionParameter> parameters, int commandTimeoutSeconds, CancellationToken cancellationToken)
+            => Task.FromResult(new QueryExecutionResult { IsSuccess = true });
+    }
+
     [Fact]
     public void Defaults_AreDarkModeAndSchemaAssistantVisible()
     {
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument(), CreateProcedureRunner());
 
         Assert.True(vm.IsDarkMode);
         Assert.True(vm.IsSchemaAssistantVisible);
@@ -66,7 +83,7 @@ public sealed class MainWindowViewModelTests
     public void SettingIsDarkMode_InvokesCallbackWithNewValue()
     {
         bool? observed = null;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), value => observed = value, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), value => observed = value, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument(), CreateProcedureRunner());
 
         vm.IsDarkMode = false;
 
@@ -77,7 +94,7 @@ public sealed class MainWindowViewModelTests
     public void SettingIsSchemaAssistantVisible_InvokesCallbackWithNewValue()
     {
         bool? observed = null;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, value => observed = value, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, value => observed = value, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument(), CreateProcedureRunner());
 
         vm.IsSchemaAssistantVisible = false;
 
@@ -88,7 +105,7 @@ public sealed class MainWindowViewModelTests
     public void SettingSameValue_DoesNotInvokeCallback()
     {
         var invocationCount = 0;
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => invocationCount++, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => invocationCount++, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument(), CreateProcedureRunner());
 
         vm.IsDarkMode = true; // already the default value
 
@@ -99,7 +116,7 @@ public sealed class MainWindowViewModelTests
     public void CommandRegistry_IsExposedAsGiven()
     {
         var registry = new AppCommandRegistry();
-        var vm = new MainWindowViewModel(registry, _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument());
+        var vm = new MainWindowViewModel(registry, _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument(), CreateProcedureRunner());
 
         Assert.Same(registry, vm.CommandRegistry);
     }
@@ -108,7 +125,7 @@ public sealed class MainWindowViewModelTests
     public void TemplatesPanel_IsExposedAsGiven()
     {
         var templatesPanel = CreateTemplatesPanel();
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, templatesPanel, CreateSchemaAssistant(), CreateQueryDocument());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, templatesPanel, CreateSchemaAssistant(), CreateQueryDocument(), CreateProcedureRunner());
 
         Assert.Same(templatesPanel, vm.TemplatesPanel);
     }
@@ -117,7 +134,7 @@ public sealed class MainWindowViewModelTests
     public void SchemaAssistant_IsExposedAsGiven()
     {
         var schemaAssistant = CreateSchemaAssistant();
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), schemaAssistant, CreateQueryDocument());
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), schemaAssistant, CreateQueryDocument(), CreateProcedureRunner());
 
         Assert.Same(schemaAssistant, vm.SchemaAssistant);
     }
@@ -126,8 +143,17 @@ public sealed class MainWindowViewModelTests
     public void QueryDocument_IsExposedAsGiven()
     {
         var queryDocument = CreateQueryDocument();
-        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), queryDocument);
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), queryDocument, CreateProcedureRunner());
 
         Assert.Same(queryDocument, vm.QueryDocument);
+    }
+
+    [Fact]
+    public void ProcedureRunner_IsExposedAsGiven()
+    {
+        var procedureRunner = CreateProcedureRunner();
+        var vm = new MainWindowViewModel(new AppCommandRegistry(), _ => { }, _ => { }, CreateTemplatesPanel(), CreateSchemaAssistant(), CreateQueryDocument(), procedureRunner);
+
+        Assert.Same(procedureRunner, vm.ProcedureRunner);
     }
 }

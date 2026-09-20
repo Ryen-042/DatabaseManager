@@ -65,7 +65,6 @@ public partial class MainWindow : Window
     private List<StoredProcedureParameterInfo> _selectedProcedureParameters = new();
     private TableSchemaInfo? _selectedTable;
     private StoredProcedureSchemaInfo? _selectedStoredProcedure;
-    private readonly ObservableCollection<ProcedureParameterEditorRow> _runnerParameterRows = new();
     private readonly GridLength _schemaPaneExpandedWidth = new(330);
     private DataTable? _editableResultsTable;
     private bool _isEditMode;
@@ -135,7 +134,16 @@ public partial class MainWindow : Window
             setStatus: SetStatus,
             onResult: DisplayExecutionResult,
             onBusyChanged: SetExecutionState);
-        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant, queryDocument);
+        var procedureRunner = new ProcedureRunnerViewModel(
+            _storedProcedureExecutionService,
+            getConnectionString: () => ConnectionStringTextBox.Text.Trim(),
+            getFullOutputCheckboxState: () => FullOutputCheckBox.IsChecked == true,
+            setFullOutputMode: value => _currentFullOutputMode = value,
+            getTimeoutSeconds: ParseTimeoutSeconds,
+            setStatus: SetStatus,
+            onResult: DisplayExecutionResult,
+            onBusyChanged: SetExecutionState);
+        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant, queryDocument, procedureRunner);
         DataContext = ViewModel;
         RegisterCommands();
         BuildInputBindings();
@@ -156,7 +164,6 @@ public partial class MainWindow : Window
         App.ApplyTheme(ViewModel.IsDarkMode);
         ApplyTitleBarTheme(ViewModel.IsDarkMode);
         await ViewModel.TemplatesPanel.RefreshAsync();
-        RunnerParametersDataGrid.ItemsSource = _runnerParameterRows;
         OutputTabControl.SelectedIndex = OutputEditRowsTabIndex;
         ApplyEditModeState();
         ApplyEditRowsCornerButtonStyle();
@@ -498,21 +505,7 @@ public partial class MainWindow : Window
 
     private void OnOpenInRunnerRequested(StoredProcedureSchemaInfo procedure, List<StoredProcedureParameterInfo> parameters)
     {
-        _runnerParameterRows.Clear();
-
-        foreach (var parameter in parameters.Where(x => !x.IsReturnValue))
-        {
-            _runnerParameterRows.Add(new ProcedureParameterEditorRow
-            {
-                ParameterName = parameter.ParameterName,
-                DataType = parameter.DataType,
-                Value = string.Empty,
-                SendAsNull = false,
-                IsOutput = parameter.IsOutput
-            });
-        }
-
-        RunnerProcedureTextBlock.Text = $"Ready to execute {procedure.FullName}";
+        ViewModel.ProcedureRunner.LoadParameters(procedure, parameters);
         OutputTabControl.SelectedIndex = OutputProcedureRunnerTabIndex;
         SetStatus("Loaded procedure parameters into runner.");
     }
@@ -1074,53 +1067,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void ExecuteProcedureButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return;
-        }
-
-        if (!EnsureProcedureSelection())
-        {
-            return;
-        }
-
-        _currentFullOutputMode = FullOutputCheckBox.IsChecked == true;
-
-        SetExecutionState(true);
-        SetStatus(_currentFullOutputMode ? "Executing stored procedure (full output mode)..." : "Executing stored procedure...");
-
-        var parameters = _runnerParameterRows
-            .Select(x => ProcedureParameterMapper.ToExecutionParameter(x.ParameterName, x.Value, x.SendAsNull, x.IsOutput))
-            .ToList();
-
-        var result = await _storedProcedureExecutionService.ExecuteAsync(
-            connectionString,
-            _selectedStoredProcedure!.SchemaName,
-            _selectedStoredProcedure.ProcedureName,
-            parameters,
-            ParseTimeoutSeconds(),
-            CancellationToken.None);
-
-        DisplayExecutionResult("Stored procedure", result);
-        SetExecutionState(false);
-    }
-
     private async Task LoadSchemaMetadataAsync(string connectionString)
     {
         await ViewModel.SchemaAssistant.LoadAsync(connectionString);
-    }
-
-    private bool EnsureProcedureSelection()
-    {
-        if (_selectedStoredProcedure is null)
-        {
-            SetStatus("Select a stored procedure first.");
-            return false;
-        }
-
-        return true;
     }
 
     private bool TryGetConnectionString(out string connectionString, bool showMissingStatus = true)
@@ -2770,18 +2719,5 @@ public partial class MainWindow : Window
 
         parameters = dialog.Parameters;
         return true;
-    }
-
-    private sealed class ProcedureParameterEditorRow
-    {
-        public required string ParameterName { get; init; }
-
-        public required string DataType { get; init; }
-
-        public string? Value { get; set; }
-
-        public bool SendAsNull { get; set; }
-
-        public bool IsOutput { get; init; }
     }
 }

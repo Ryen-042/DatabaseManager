@@ -21,7 +21,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Action<bool> onSchemaAssistantVisibleChanged,
         TemplatesPanelViewModel templatesPanel,
         SchemaAssistantViewModel schemaAssistant,
-        QueryDocumentViewModel queryDocument)
+        QueryDocumentViewModel queryDocument,
+        ProcedureRunnerViewModel procedureRunner)
     {
         CommandRegistry = commandRegistry;
         _onDarkModeChanged = onDarkModeChanged;
@@ -29,6 +30,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         TemplatesPanel = templatesPanel;
         SchemaAssistant = schemaAssistant;
         QueryDocument = queryDocument;
+        ProcedureRunner = procedureRunner;
     }
 
     public ICommandRegistry CommandRegistry { get; }
@@ -38,6 +40,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public SchemaAssistantViewModel SchemaAssistant { get; }
 
     public QueryDocumentViewModel QueryDocument { get; }
+
+    public ProcedureRunnerViewModel ProcedureRunner { get; }
 
     [ObservableProperty]
     private bool _isDarkMode = true;

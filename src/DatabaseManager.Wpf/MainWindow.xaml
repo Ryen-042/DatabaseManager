@@ -292,23 +292,22 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock x:Name="RunnerProcedureTextBlock"
-                                           FontWeight="SemiBold"
-                                           Text="No procedure selected." />
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="{Binding ProcedureRunner.ProcedureSummary}" />
 
                                 <WrapPanel Grid.Row="1" Margin="0,10,0,10">
                                     <Button Content="Execute Procedure"
                                             Margin="0,0,8,8"
-                                            Click="ExecuteProcedureButton_Click" />
+                                            Command="{Binding ProcedureRunner.ExecuteCommand}" />
                                 </WrapPanel>
 
-                                <DataGrid x:Name="RunnerParametersDataGrid"
-                                          Grid.Row="2"
+                                <DataGrid Grid.Row="2"
                                           FlowDirection="LeftToRight"
                                           AutoGenerateColumns="False"
                                           HeadersVisibility="All"
                                           CanUserAddRows="False"
                                           CanUserDeleteRows="False"
+                                          ItemsSource="{Binding ProcedureRunner.Parameters}"
                                           Loaded="DataGrid_Loaded"
                                           PreviewMouseLeftButtonUp="SchemaDataGrid_PreviewMouseLeftButtonUp">
                                     <DataGrid.Columns>
