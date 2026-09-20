@@ -25,7 +25,8 @@
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ItemsSource="{Binding FilteredTables}"
-                 SelectedItem="{Binding SelectedTableItem, Mode=TwoWay}">
+                 SelectedItem="{Binding SelectedTableItem, Mode=TwoWay}"
+                 PreviewMouseLeftButtonUp="TablesListBox_PreviewMouseLeftButtonUp">
             <ListBox.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Generate SELECT" Command="{Binding PlacementTarget.DataContext.GenerateSelectCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />

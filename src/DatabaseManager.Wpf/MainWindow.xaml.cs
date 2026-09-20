@@ -441,7 +441,10 @@ public partial class MainWindow : Window
         _currentFullOutputMode = fullOutputEnabled;
         TrackRecentSqlFragments(sqlToExecute);
 
-        var parameterNames = QueryOutputModeParser.ExtractParameterNames(sqlToExecute);
+        var parameterNames = QueryBatchSplitter.Split(sqlToExecute)
+            .SelectMany(QueryOutputModeParser.ExtractParameterNames)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         IReadOnlyList<QueryParameterValue> queryParameters = Array.Empty<QueryParameterValue>();
         if (parameterNames.Count > 0)
         {

@@ -178,6 +178,38 @@ public sealed class SchemaAssistantViewModelTests
     }
 
     [Fact]
+    public async Task ReapplySelectedTable_ReinvokesOnTableSelectedForTheCurrentSelection()
+    {
+        // Simulates re-clicking an already-selected table row: WPF's ListBox doesn't raise a
+        // selection-changed notification for that, so this is the fallback path that lets a
+        // freshly-typed "TableName" placeholder still get substituted.
+        var (vm, schema, state) = Create();
+        var table = CreateTable();
+        schema.Tables = [table];
+        schema.Columns = [CreateColumn("Id", isPrimaryKey: true)];
+        await vm.LoadAsync("Server=test;");
+        vm.SelectedTableItem = vm.FilteredTables[0];
+        await Task.Delay(50);
+        Assert.Single(state.TableSelected);
+
+        vm.ReapplySelectedTable();
+        await Task.Delay(50);
+
+        Assert.Equal(2, state.TableSelected.Count);
+        Assert.Equal(table.FullName, state.TableSelected[1].Table.FullName);
+    }
+
+    [Fact]
+    public void ReapplySelectedTable_NoSelection_DoesNothing()
+    {
+        var (vm, _, state) = Create();
+
+        vm.ReapplySelectedTable();
+
+        Assert.Empty(state.TableSelected);
+    }
+
+    [Fact]
     public async Task SelectingProcedure_LoadsParametersAndDefinitionAndInvokesCallback()
     {
         var (vm, schema, state) = Create();

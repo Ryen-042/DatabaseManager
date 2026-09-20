@@ -47,61 +47,72 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
 
         try
         {
+            var batches = QueryBatchSplitter.Split(sql);
+
             await using var connection = new SqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
 
-            await using var command = new SqlCommand(sql, connection)
-            {
-                CommandTimeout = commandTimeoutSeconds
-            };
-
-            if (parameters is not null)
-            {
-                foreach (var parameter in parameters)
-                {
-                    command.Parameters.AddWithValue(parameter.Name, parameter.Value ?? DBNull.Value);
-                }
-            }
-
             var resultSets = new List<QueryResultSet>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
             var resultSetIndex = 1;
-            do
+            var totalAffectedRows = 0;
+
+            foreach (var batch in batches)
             {
-                if (reader.FieldCount <= 0)
+                await using var command = new SqlCommand(batch, connection)
                 {
-                    continue;
+                    CommandTimeout = commandTimeoutSeconds
+                };
+
+                if (parameters is not null)
+                {
+                    foreach (var parameter in parameters)
+                    {
+                        command.Parameters.AddWithValue(parameter.Name, parameter.Value ?? DBNull.Value);
+                    }
                 }
 
-                var dataTable = await ReadCurrentResultSetAsync(reader, cancellationToken);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
-                resultSets.Add(new QueryResultSet
+                do
                 {
-                    Title = $"Result Set {resultSetIndex++}",
-                    DataTable = dataTable,
-                    AffectedRows = dataTable.Rows.Count
-                });
-            }
-            while (await reader.NextResultAsync(cancellationToken));
+                    if (reader.FieldCount <= 0)
+                    {
+                        continue;
+                    }
 
-            var affectedRows = reader.RecordsAffected;
+                    var dataTable = await ReadCurrentResultSetAsync(reader, cancellationToken);
+
+                    resultSets.Add(new QueryResultSet
+                    {
+                        Title = $"Result Set {resultSetIndex++}",
+                        DataTable = dataTable,
+                        AffectedRows = dataTable.Rows.Count
+                    });
+                }
+                while (await reader.NextResultAsync(cancellationToken));
+
+                if (reader.RecordsAffected > 0)
+                {
+                    totalAffectedRows += reader.RecordsAffected;
+                }
+            }
+
             if (resultSets.Count == 0)
             {
                 resultSets.Add(new QueryResultSet
                 {
                     Title = "Statement Summary",
                     DataTable = null,
-                    AffectedRows = Math.Max(0, affectedRows)
+                    AffectedRows = Math.Max(0, totalAffectedRows)
                 });
             }
-            else if (affectedRows > 0)
+            else if (totalAffectedRows > 0)
             {
                 resultSets.Add(new QueryResultSet
                 {
                     Title = "Statement Summary",
                     DataTable = null,
-                    AffectedRows = affectedRows
+                    AffectedRows = totalAffectedRows
                 });
             }
 
@@ -112,7 +123,7 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
             {
                 IsSuccess = true,
                 DataTable = primaryDataTable,
-                AffectedRows = primaryDataTable is null ? Math.Max(0, affectedRows) : primaryDataTable.Rows.Count,
+                AffectedRows = primaryDataTable is null ? Math.Max(0, totalAffectedRows) : primaryDataTable.Rows.Count,
                 Duration = stopwatch.Elapsed,
                 ResultSets = resultSets
             };

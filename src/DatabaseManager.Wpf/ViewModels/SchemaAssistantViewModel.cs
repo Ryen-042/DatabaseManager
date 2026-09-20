@@ -210,6 +210,21 @@ public sealed partial class SchemaAssistantViewModel : ObservableObject
         _ = LoadProcedureDetailsAsync(value.Procedure);
     }
 
+    /// <summary>
+    /// Re-runs table-selection side effects (including TableName placeholder substitution)
+    /// for the currently-selected table without requiring the selection to actually change.
+    /// WPF's ListBox doesn't raise a selection-changed notification when you click an
+    /// already-selected row, so re-clicking the same table to "refresh" a placeholder the
+    /// user just typed would otherwise silently do nothing.
+    /// </summary>
+    public void ReapplySelectedTable()
+    {
+        if (SelectedTableItem is { } item)
+        {
+            _ = LoadTableDetailsAsync(item.Table);
+        }
+    }
+
     private async Task LoadTableDetailsAsync(TableSchemaInfo table)
     {
         var connectionString = _getConnectionString();
