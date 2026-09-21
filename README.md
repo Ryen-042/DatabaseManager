@@ -151,6 +151,7 @@ In **Results** tab:
 - `Ctrl+Q`: Cancel running query
 - `Ctrl+T`: New query document
 - `Ctrl+W`: Close the current query document (prompts first if it has unexecuted changes)
+- `Alt+1`..`Alt+9`: Switch to the Nth open query document
 - `Ctrl+R`: Refresh Edit Rows
 - `Ctrl+S`: Save Edit Rows changes
 - `Ctrl+Space`: Trigger SQL suggestions (Up/Down/Enter/Tab/Escape to navigate)
