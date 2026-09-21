@@ -6,11 +6,13 @@ using DatabaseManager.Core.Services;
 namespace DatabaseManager.Wpf.ViewModels;
 
 /// <summary>
-/// Owns Run/Cancel execution state for the SQL Editor tab. The AvalonEdit control, the
-/// results display, and the shared SQL suggestion popup (also used by Edit Rows) still live
-/// in MainWindow - this class owns only the state that's been migrated so far (IsBusy,
-/// IsDirty, and the Run/Cancel commands), reaching out via constructor-supplied callbacks for
+/// Owns Run/Cancel execution state for the Query tab - a single shared engine bound to
+/// whichever query document is currently active (only one query runs at a time by design; see
+/// QueryDocumentsViewModel). The AvalonEdit control, the results display, and the shared SQL
+/// suggestion popup (also used by Edit Rows) still live in MainWindow - this class owns only
+/// IsBusy and the Run/Cancel commands, reaching out via constructor-supplied callbacks for
 /// anything outside its own concern, the same pattern SchemaAssistantViewModel established.
+/// Per-document dirty tracking lives on QueryDocumentTab, not here.
 /// </summary>
 public sealed partial class QueryDocumentViewModel : ObservableObject
 {
@@ -56,16 +58,6 @@ public sealed partial class QueryDocumentViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isBusy;
-
-    /// <summary>
-    /// True after any SQL text edit since the last successful run; reset to false immediately
-    /// after a successful run. Not yet surfaced in the UI - this is the prerequisite Phase 7's
-    /// per-document dirty tab indicator will read once multiple query documents exist.
-    /// </summary>
-    [ObservableProperty]
-    private bool _isDirty;
-
-    public void MarkDirty() => IsDirty = true;
 
     partial void OnIsBusyChanged(bool value)
     {
@@ -133,11 +125,6 @@ public sealed partial class QueryDocumentViewModel : ObservableObject
         var result = queryParameters.Count == 0
             ? await _queryService.ExecuteAsync(connectionString, sqlToExecute, timeoutSeconds, _executionCancellationTokenSource.Token)
             : await _queryService.ExecuteAsync(connectionString, sqlToExecute, queryParameters, timeoutSeconds, _executionCancellationTokenSource.Token);
-
-        if (result.IsSuccess)
-        {
-            IsDirty = false;
-        }
 
         _onResult("Query", result);
         IsBusy = false;

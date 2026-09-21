@@ -34,10 +34,9 @@ public partial class MainWindow : Window
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
     private const int ClipboardCannotOpenHResult = unchecked((int)0x800401D0);
     private const int OutputEditRowsTabIndex = 0;
-    private const int OutputSqlEditorTabIndex = 1;
+    private const int OutputQueryTabIndex = 1;
     private const int OutputSchemaTabIndex = 2;
-    private const int OutputResultsTabIndex = 3;
-    private const int OutputProcedureRunnerTabIndex = 4;
+    private const int OutputProcedureRunnerTabIndex = 3;
     private const int MaxRecentSqlFragments = 20;
 
     private readonly IDatabaseQueryService _databaseQueryService = new SqlServerQueryService();
@@ -71,6 +70,8 @@ public partial class MainWindow : Window
     private bool _isEditMode;
     private bool _isSyncingEditQuery;
     private bool _isSettingQueryTextProgrammatically;
+    private bool _isSwitchingQueryDocument;
+    private QueryDocumentTab? _executingQueryDocument;
     private bool _isEditRowsCustomQueryMode;
     private int _lastEditRowsCurrentRowIndex = -1;
     private readonly ISqlSuggestionEngine _sqlSuggestionEngine = new SqlSuggestionEngine();
@@ -119,6 +120,10 @@ public partial class MainWindow : Window
             onOpenInRunnerRequested: OnOpenInRunnerRequested,
             onCopyRequested: CopySchemaObjectNameToClipboardAsync,
             setStatus: SetStatus);
+        var queryDocuments = new QueryDocumentsViewModel(
+            getEditorText: () => QueryTextBox.Text,
+            activateDocument: ActivateQueryDocument,
+            confirmCloseDirtyDocument: ConfirmCloseDirtyQueryDocument);
         var queryDocument = new QueryDocumentViewModel(
             _databaseQueryService,
             getConnectionString: () => ConnectionStringTextBox.Text.Trim(),
@@ -133,8 +138,8 @@ public partial class MainWindow : Window
             },
             trackRecentSqlFragments: TrackRecentSqlFragments,
             setStatus: SetStatus,
-            onResult: DisplayExecutionResult,
-            onBusyChanged: SetExecutionState);
+            onResult: OnQueryDocumentResult,
+            onBusyChanged: OnQueryExecutionBusyChanged);
         var procedureRunner = new ProcedureRunnerViewModel(
             _storedProcedureExecutionService,
             getConnectionString: () => ConnectionStringTextBox.Text.Trim(),
@@ -144,7 +149,7 @@ public partial class MainWindow : Window
             setStatus: SetStatus,
             onResult: DisplayExecutionResult,
             onBusyChanged: SetExecutionState);
-        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant, queryDocument, procedureRunner);
+        ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant, queryDocument, queryDocuments, procedureRunner);
         DataContext = ViewModel;
         RegisterCommands();
         BuildInputBindings();
@@ -266,10 +271,15 @@ public partial class MainWindow : Window
                 : Task.CompletedTask), "Icon.Save");
 
         RegisterTabSwitch("view.switchEditRows", "Switch to Edit Rows", Key.D1, OutputEditRowsTabIndex);
-        RegisterTabSwitch("view.switchSqlEditor", "Switch to SQL Editor", Key.D2, OutputSqlEditorTabIndex);
+        RegisterTabSwitch("view.switchQuery", "Switch to Query", Key.D2, OutputQueryTabIndex);
         RegisterTabSwitch("view.switchSchema", "Switch to Schema", Key.D3, OutputSchemaTabIndex);
-        RegisterTabSwitch("view.switchResults", "Switch to Results", Key.D4, OutputResultsTabIndex);
-        RegisterTabSwitch("view.switchProcedureRunner", "Switch to Procedure Runner", Key.D5, OutputProcedureRunnerTabIndex);
+        RegisterTabSwitch("view.switchProcedureRunner", "Switch to Procedure Runner", Key.D4, OutputProcedureRunnerTabIndex);
+
+        Reg("query.newDocument", "New Query", "Query", new KeyGesture(Key.T, ModifierKeys.Control),
+            new RelayCommand(() => ViewModel.QueryDocuments.NewDocumentCommand.Execute(null)), "Icon.Plus");
+
+        Reg("query.closeDocument", "Close Query", "Query", new KeyGesture(Key.W, ModifierKeys.Control),
+            new RelayCommand(() => ViewModel.QueryDocuments.CloseDocumentCommand.Execute(null)), "Icon.Close");
 
         Reg("view.toggleDarkMode", "Toggle Dark Mode", "View", null,
             new RelayCommand(() => ViewModel.IsDarkMode = !ViewModel.IsDarkMode), "Icon.Moon");
@@ -438,7 +448,7 @@ public partial class MainWindow : Window
     {
         SetQueryEditorText(sql);
         TrackRecentSqlFragments(sql);
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        OutputTabControl.SelectedIndex = OutputQueryTabIndex;
     }
 
     private bool ConfirmDeleteTemplate(string name)
@@ -500,7 +510,7 @@ public partial class MainWindow : Window
     private void OnSchemaScriptGenerated(string sql, string status)
     {
         SetQueryEditorText(sql);
-        OutputTabControl.SelectedIndex = OutputSqlEditorTabIndex;
+        OutputTabControl.SelectedIndex = OutputQueryTabIndex;
         SetStatus(status);
     }
 
@@ -1088,7 +1098,7 @@ public partial class MainWindow : Window
 
         _currentDataTable = resultSets.FirstOrDefault(x => x.DataTable is not null)?.DataTable;
         RenderResultsSections(resultSets);
-        OutputTabControl.SelectedIndex = OutputResultsTabIndex;
+        OutputTabControl.SelectedIndex = OutputQueryTabIndex;
         ResultsSummaryTextBlock.Text = BuildResultsSummaryText(resultSets, result.AffectedRows);
 
         if (result.OutputParameters is { Count: > 0 })
@@ -2031,7 +2041,16 @@ public partial class MainWindow : Window
     {
         if (ReferenceEquals(sender, QueryTextBox))
         {
-            ViewModel.QueryDocument.MarkDirty();
+            // Switching documents also assigns QueryTextBox.Text (to show the incoming
+            // document's saved SQL), but that's not a user edit - don't mark it dirty.
+            if (!_isSwitchingQueryDocument)
+            {
+                var activeDocument = ViewModel.QueryDocuments.SelectedDocument;
+                if (activeDocument is not null)
+                {
+                    activeDocument.IsDirty = true;
+                }
+            }
 
             // Covers both orderings: type/load the placeholder while a table is already
             // selected (this), or select a table after the placeholder is already there
@@ -2082,6 +2101,113 @@ public partial class MainWindow : Window
         }
 
         HideSqlSuggestions();
+    }
+
+    /// <summary>
+    /// Loads a query document's saved text into the shared editor when the document tab
+    /// selection changes - unlike SetQueryEditorText, this must NOT mark the newly-selected
+    /// document dirty (nothing was actually edited, we're just switching which buffer is
+    /// visible), so it also sets _isSwitchingQueryDocument for SqlEditorTextBox_TextChanged
+    /// to check.
+    /// </summary>
+    private void LoadQueryDocumentIntoEditor(string sql)
+    {
+        _isSettingQueryTextProgrammatically = true;
+        _isSwitchingQueryDocument = true;
+        try
+        {
+            QueryTextBox.Text = sql;
+        }
+        finally
+        {
+            _isSettingQueryTextProgrammatically = false;
+            _isSwitchingQueryDocument = false;
+        }
+
+        HideSqlSuggestions();
+    }
+
+    private void ActivateQueryDocument(QueryDocumentTab document)
+    {
+        LoadQueryDocumentIntoEditor(document.SqlText);
+
+        if (document.LastResultSets is { } resultSets)
+        {
+            RenderResultsSections(resultSets);
+            ResultsSummaryTextBlock.Text = document.LastResultsSummary ?? string.Empty;
+        }
+        else
+        {
+            ResultsSectionsPanel.Children.Clear();
+            ResultsSummaryTextBlock.Text = "Results";
+        }
+    }
+
+    private bool ConfirmCloseDirtyQueryDocument(QueryDocumentTab document)
+    {
+        var confirmation = MessageBox.Show(
+            $"'{document.Title}' has unexecuted changes. Close it anyway?",
+            "Close Query",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        return confirmation == MessageBoxResult.Yes;
+    }
+
+    private void OnQueryExecutionBusyChanged(bool isBusy)
+    {
+        if (isBusy)
+        {
+            _executingQueryDocument = ViewModel.QueryDocuments.SelectedDocument;
+        }
+
+        SetExecutionState(isBusy);
+    }
+
+    /// <summary>
+    /// Attributes a completed execution to whichever document was active when Run was clicked
+    /// (captured by OnQueryExecutionBusyChanged), not whichever is active now - the user may
+    /// have switched to a different query tab while this one was still running. Only repaints
+    /// the shared Results panel if that document is still the one currently visible; otherwise
+    /// the result is stored on the document and surfaces (via DisplayExecutionResult) the next
+    /// time the user switches back to it.
+    /// </summary>
+    private void OnQueryDocumentResult(string operationName, QueryExecutionResult result)
+    {
+        var document = _executingQueryDocument;
+        _executingQueryDocument = null;
+
+        if (document is not null)
+        {
+            if (result.IsSuccess)
+            {
+                document.IsDirty = false;
+                var resultSets = result.ResultSets?.Count > 0 ? result.ResultSets : BuildFallbackResultSets(result);
+                document.LastResultSets = resultSets;
+                document.LastResultsSummary = BuildResultsSummaryText(resultSets, result.AffectedRows);
+            }
+            else
+            {
+                document.LastResultSets = null;
+                document.LastResultsSummary = null;
+            }
+        }
+
+        if (document is null || ReferenceEquals(document, ViewModel.QueryDocuments.SelectedDocument))
+        {
+            DisplayExecutionResult(operationName, result);
+            return;
+        }
+
+        if (result.IsSuccess)
+        {
+            SetStatus($"{operationName} completed in {result.Duration.TotalSeconds:F2}s ({document.Title}).");
+        }
+        else
+        {
+            SetStatus($"{operationName} failed after {result.Duration.TotalSeconds:F2}s ({document.Title}): {result.ErrorMessage}");
+            _toastService.Show($"{operationName} failed: {result.ErrorMessage}", ToastKind.Error);
+        }
     }
 
     private void SqlEditorTextBox_PreviewKeyDown(object sender, KeyEventArgs e)

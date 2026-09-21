@@ -6,7 +6,7 @@ DatabaseManager combines query authoring, schema exploration, template managemen
 
 ## Highlights
 
-- SQL editor tab with multiline query authoring, context-aware autocomplete (keywords, tables, columns, FK-based join hints, recent fragments), and multi-batch script execution (`GO`-separated batches run sequentially, so a copied "Script as CREATE" with `USE`/`SET .../GO` boilerplate just works).
+- Query tab with multiple document buffers (Ctrl+T/Ctrl+W, each with its own text, dirty indicator, and remembered results), multiline query authoring, context-aware autocomplete (keywords, tables, columns, FK-based join hints, recent fragments), and multi-batch script execution (`GO`-separated batches run sequentially, so a copied "Script as CREATE" with `USE`/`SET .../GO` boilerplate just works).
 - Schema Assistant panel for tables, procedures, and query templates, with script-generation context menus (SELECT/INSERT/UPDATE/DELETE/EXEC, Drop/Drop+Recreate Table, Drop Procedure/Generate ALTER Script).
 - Saved connection profiles (DPAPI-encrypted at rest) alongside a raw connection-string fallback, with a designatable default that auto-connects on startup.
 - Command palette (Ctrl+Shift+P), searchable shortcuts help panel (Ctrl+/), and a top menu — all driven from one command registry, so they never drift out of sync.
@@ -146,9 +146,11 @@ In **Results** tab:
 
 ## Keyboard Shortcuts
 
-- `Ctrl+1`..`Ctrl+5`: Switch output tabs (Edit Rows/SQL Editor/Schema/Results/Procedure Runner)
+- `Ctrl+1`..`Ctrl+4`: Switch output tabs (Edit Rows/Query/Schema/Procedure Runner)
 - `Ctrl+E`: Run query, or refresh Edit Rows if that tab is active
 - `Ctrl+Q`: Cancel running query
+- `Ctrl+T`: New query document
+- `Ctrl+W`: Close the current query document (prompts first if it has unexecuted changes)
 - `Ctrl+R`: Refresh Edit Rows
 - `Ctrl+S`: Save Edit Rows changes
 - `Ctrl+Space`: Trigger SQL suggestions (Up/Down/Enter/Tab/Escape to navigate)
@@ -175,7 +177,7 @@ The palette and help panel always reflect the full, current set — check there 
 
 - Focused on SQL Server (`Microsoft.Data.SqlClient`).
 - Edit Rows update/delete without a primary key relies on a user-selected-column predicate with a row-count safeguard, since there's no other reliable way to identify a specific row.
-- One SQL Editor/Results pair at a time — no multi-tab query documents yet.
+- Multiple query documents can be open at once (Ctrl+T/Ctrl+W), but only one query executes at a time across all of them — there's no side-by-side concurrent execution.
 
 ## Documentation
 

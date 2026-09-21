@@ -22,6 +22,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         TemplatesPanelViewModel templatesPanel,
         SchemaAssistantViewModel schemaAssistant,
         QueryDocumentViewModel queryDocument,
+        QueryDocumentsViewModel queryDocuments,
         ProcedureRunnerViewModel procedureRunner)
     {
         CommandRegistry = commandRegistry;
@@ -30,6 +31,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         TemplatesPanel = templatesPanel;
         SchemaAssistant = schemaAssistant;
         QueryDocument = queryDocument;
+        QueryDocuments = queryDocuments;
         ProcedureRunner = procedureRunner;
     }
 
@@ -40,6 +42,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public SchemaAssistantViewModel SchemaAssistant { get; }
 
     public QueryDocumentViewModel QueryDocument { get; }
+
+    public QueryDocumentsViewModel QueryDocuments { get; }
 
     public ProcedureRunnerViewModel ProcedureRunner { get; }
 

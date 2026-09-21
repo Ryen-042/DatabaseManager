@@ -7,6 +7,7 @@
     xmlns:controls="clr-namespace:DatabaseManager.Wpf.Controls"
     xmlns:views="clr-namespace:DatabaseManager.Wpf.Views"
     xmlns:behaviors="clr-namespace:DatabaseManager.Wpf.Behaviors"
+    xmlns:converters="clr-namespace:DatabaseManager.Wpf.Converters"
         mc:Ignorable="d"
         Title="Database Manager"
         Height="860"
@@ -17,6 +18,9 @@
         WindowState="Maximized"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
+    <Window.Resources>
+        <converters:DirtyIndicatorConverter x:Key="DirtyIndicatorConverter" />
+    </Window.Resources>
     <Grid Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -215,18 +219,98 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="SQL Editor">
+                        <TabItem Header="Query">
                             <Grid Margin="10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0"
-                                           Margin="0,0,0,8"
-                                           FontWeight="SemiBold"
-                                           FontSize="14"
-                                           Text="SQL Query" />
+                                <!-- Query document tab strip -->
+                                <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="True">
+                                    <Button DockPanel.Dock="Right"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            ToolTip="New Query (Ctrl+T)"
+                                            Command="{Binding QueryDocuments.NewDocumentCommand}">
+                                        <Path Data="{StaticResource Icon.Plus}"
+                                              Width="12"
+                                              Height="12"
+                                              Stretch="Uniform"
+                                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                    </Button>
+                                    <ListBox x:Name="QueryDocumentsListBox"
+                                             BorderThickness="0"
+                                             Background="Transparent"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                             ItemsSource="{Binding QueryDocuments.Documents}"
+                                             SelectedItem="{Binding QueryDocuments.SelectedDocument, Mode=TwoWay}">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="10,6" />
+                                                <Setter Property="Margin" Value="0,0,2,0" />
+                                                <Setter Property="BorderThickness" Value="0,0,0,2" />
+                                                <Setter Property="BorderBrush" Value="Transparent" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border Padding="{TemplateBinding Padding}"
+                                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                                    Background="{TemplateBinding Background}">
+                                                                <ContentPresenter />
+                                                            </Border>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="6"
+                                                             Height="6"
+                                                             Margin="0,0,6,0"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{DynamicResource AccentBrush}"
+                                                             Visibility="{Binding IsDirty, Converter={StaticResource DirtyIndicatorConverter}}" />
+                                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                                    <Button Margin="8,0,0,0"
+                                                            Width="16"
+                                                            Height="16"
+                                                            Padding="0"
+                                                            ToolTip="Close (Ctrl+W)"
+                                                            Style="{StaticResource IconButtonStyle}"
+                                                            Command="{Binding DataContext.QueryDocuments.CloseDocumentCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                            CommandParameter="{Binding}">
+                                                        <Path Data="{StaticResource Icon.Close}"
+                                                              Width="8"
+                                                              Height="8"
+                                                              Stretch="Uniform"
+                                                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                              StrokeThickness="1.5" />
+                                                    </Button>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
 
                                 <avalonEdit:TextEditor x:Name="QueryTextBox"
                                                        Grid.Row="1"
@@ -241,48 +325,53 @@
                                                        PreviewKeyDown="SqlEditorTextBox_PreviewKeyDown"
                                                        FontFamily="Consolas"
                                                        FontSize="13" />
+
+                                <GridSplitter Grid.Row="2"
+                                              Height="6"
+                                              HorizontalAlignment="Stretch"
+                                              ResizeDirection="Rows"
+                                              ResizeBehavior="PreviousAndNext"
+                                              Background="Transparent" />
+
+                                <Grid Grid.Row="3">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="ResultsSummaryTextBlock" VerticalAlignment="Center" FontWeight="SemiBold" Text="Results" />
+                                        <Button Grid.Column="1"
+                                                Margin="8,0,8,0"
+                                                Content="Export CSV"
+                                                MinWidth="90"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="ExportCsvButton_Click" />
+                                        <Button Grid.Column="2"
+                                                Content="Export Excel"
+                                                MinWidth="95"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="ExportExcelButton_Click" />
+                                    </Grid>
+                                    <ScrollViewer Grid.Row="1"
+                                                  Margin="0,10,0,0"
+                                                  FlowDirection="LeftToRight"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="ResultsSectionsPanel"
+                                                    FlowDirection="LeftToRight" />
+                                    </ScrollViewer>
+                                </Grid>
                             </Grid>
                         </TabItem>
 
                         <TabItem Header="Schema">
                             <views:SchemaDetailView DataContext="{Binding SchemaAssistant}" />
-                        </TabItem>
-
-                        <TabItem Header="Results">
-                            <Grid Margin="10">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="ResultsSummaryTextBlock" VerticalAlignment="Center" FontWeight="SemiBold" Text="Results" />
-                                    <Button Grid.Column="1"
-                                            Margin="8,0,8,0"
-                                            Content="Export CSV"
-                                            MinWidth="90"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="ExportCsvButton_Click" />
-                                    <Button Grid.Column="2"
-                                            Content="Export Excel"
-                                            MinWidth="95"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="ExportExcelButton_Click" />
-                                </Grid>
-                                <ScrollViewer Grid.Row="1"
-                                              Margin="0,10,0,0"
-                                              FlowDirection="LeftToRight"
-                                              VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="ResultsSectionsPanel"
-                                                FlowDirection="LeftToRight" />
-                                </ScrollViewer>
-                            </Grid>
                         </TabItem>
 
                         <TabItem Header="Procedure Runner">

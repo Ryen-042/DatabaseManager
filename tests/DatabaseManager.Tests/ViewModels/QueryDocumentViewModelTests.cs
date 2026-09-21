@@ -82,30 +82,28 @@ public sealed class QueryDocumentViewModelTests
     }
 
     [Fact]
-    public async Task RunAsync_Success_InvokesResultCallbackAndClearsDirty()
+    public async Task RunAsync_Success_InvokesResultCallback()
     {
         var (vm, service, state) = Create();
         service.Result = new QueryExecutionResult { IsSuccess = true, AffectedRows = 1 };
-        vm.MarkDirty();
 
         await vm.RunCommand.ExecuteAsync(null);
 
-        Assert.False(vm.IsDirty);
         Assert.Single(state.Results);
         Assert.Equal("Query", state.Results[0].Operation);
         Assert.True(state.Results[0].Result.IsSuccess);
     }
 
     [Fact]
-    public async Task RunAsync_Failure_KeepsDirtyTrue()
+    public async Task RunAsync_Failure_InvokesResultCallbackWithFailure()
     {
-        var (vm, service, _) = Create();
+        var (vm, service, state) = Create();
         service.Result = new QueryExecutionResult { IsSuccess = false, ErrorMessage = "boom" };
-        vm.MarkDirty();
 
         await vm.RunCommand.ExecuteAsync(null);
 
-        Assert.True(vm.IsDirty);
+        Assert.Single(state.Results);
+        Assert.False(state.Results[0].Result.IsSuccess);
     }
 
     [Fact]
