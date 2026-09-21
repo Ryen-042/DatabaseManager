@@ -281,6 +281,21 @@ public partial class MainWindow : Window
         Reg("query.closeDocument", "Close Query", "Query", new KeyGesture(Key.W, ModifierKeys.Control),
             new RelayCommand(() => ViewModel.QueryDocuments.CloseDocumentCommand.Execute(null)), "Icon.Close");
 
+        for (var documentNumber = 1; documentNumber <= 9; documentNumber++)
+        {
+            var documentIndex = documentNumber - 1;
+            var key = (Key)((int)Key.D1 + documentIndex);
+            Reg($"query.switchDocument{documentNumber}", $"Switch to Query {documentNumber}", "Query", new KeyGesture(key, ModifierKeys.Alt),
+                new RelayCommand(() =>
+                {
+                    var documents = ViewModel.QueryDocuments.Documents;
+                    if (documentIndex < documents.Count)
+                    {
+                        ViewModel.QueryDocuments.SelectedDocument = documents[documentIndex];
+                    }
+                }), "Icon.Code");
+        }
+
         Reg("view.toggleDarkMode", "Toggle Dark Mode", "View", null,
             new RelayCommand(() => ViewModel.IsDarkMode = !ViewModel.IsDarkMode), "Icon.Moon");
 
