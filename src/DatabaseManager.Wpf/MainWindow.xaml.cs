@@ -2169,6 +2169,52 @@ public partial class MainWindow : Window
         return confirmation == MessageBoxResult.Yes;
     }
 
+    /// <summary>
+    /// Focuses and selects-all in the query document rename TextBox the moment it becomes
+    /// visible (IsRenaming flips true) - the template's TextBox is always in the visual tree,
+    /// just Collapsed/Visible, so Loaded only fires once per container and can't be used here.
+    /// </summary>
+    private void QueryDocumentRenameTextBox_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is TextBox { IsVisible: true } textBox)
+        {
+            textBox.Focus();
+            textBox.SelectAll();
+        }
+    }
+
+    private void QueryDocumentRenameTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: QueryDocumentTab document })
+        {
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            document.CommitRenameCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            document.CancelRenameCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Commits on focus loss (clicking away) too, not just Enter. Guarded by IsRenaming so the
+    /// LostFocus that follows an Escape-triggered CancelRename (focus moves off the now-Collapsed
+    /// TextBox) doesn't re-commit a title that was just deliberately discarded.
+    /// </summary>
+    private void QueryDocumentRenameTextBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: QueryDocumentTab { IsRenaming: true } document })
+        {
+            document.CommitRenameCommand.Execute(null);
+        }
+    }
+
     private void OnQueryExecutionBusyChanged(bool isBusy)
     {
         if (isBusy)

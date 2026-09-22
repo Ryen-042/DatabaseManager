@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Threading;
 using DatabaseManager.Core.Services;
 using DatabaseManager.Core.Services.Schema;
 using DatabaseManager.Wpf.ViewModels;
@@ -16,35 +17,39 @@ public partial class ConnectionPickerWindow : Window
         "tempdb"
     };
 
+    private const string NoConnectionStatusText = "Select a saved connection or enter a connection string above to browse its databases.";
+
     private readonly IConnectionProfileStoreService _store;
     private readonly IDatabaseSchemaService _databaseSchemaService;
     private readonly ObservableCollection<ConnectionProfileViewModel> _profiles = new();
+    private readonly DispatcherTimer _databaseFetchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private Guid? _editingProfileId;
     private List<string> _allDatabases = new();
     private string? _selectedDatabaseName;
     private bool _isUpdatingDatabaseSelection;
+    private bool _suppressDatabaseAutoFetchOnSelectionChange;
+    private CancellationTokenSource? _databasesFetchCts;
 
     public ConnectionPickerWindow(IConnectionProfileStoreService store, IDatabaseSchemaService databaseSchemaService, string currentConnectionString)
     {
+        _databaseFetchDebounceTimer.Tick += DatabaseFetchDebounceTimer_Tick;
+
         InitializeComponent();
         _store = store;
         _databaseSchemaService = databaseSchemaService;
         ProfilesListBox.ItemsSource = _profiles;
         RawConnectionStringTextBox.Text = currentConnectionString;
 
-        // Default to the Raw tab if there's already a connection string in play and no
-        // saved profiles exist yet - avoids landing on an empty "Saved Connections" list
-        // when the user hasn't created any profiles.
         Loaded += async (_, _) => await LoadProfilesAsync();
     }
 
     /// <summary>Set once the dialog is confirmed (DialogResult == true); null connection string means canceled.</summary>
     public string? SelectedConnectionString { get; private set; }
 
-    /// <summary>Null when the user connected via the Raw tab instead of a saved profile.</summary>
+    /// <summary>Null when the user connected via the raw text box instead of a saved profile.</summary>
     public string? SelectedProfileName { get; private set; }
 
-    /// <summary>Null when the user connected via the Raw tab. Used by the caller to record last-used time only once the connection actually succeeds.</summary>
+    /// <summary>Null when the user connected via the raw text box. Used by the caller to record last-used time only once the connection actually succeeds.</summary>
     public Guid? SelectedProfileId { get; private set; }
 
     private async Task LoadProfilesAsync()
@@ -55,7 +60,17 @@ public partial class ConnectionPickerWindow : Window
         var all = await _store.GetAllAsync(CancellationToken.None);
         foreach (var profile in all.OrderByDescending(p => p.IsDefault).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
         {
-            _profiles.Add(new ConnectionProfileViewModel(profile));
+            string preview;
+            try
+            {
+                preview = _store.Decrypt(profile);
+            }
+            catch (Exception)
+            {
+                preview = "(unable to decrypt connection string)";
+            }
+
+            _profiles.Add(new ConnectionProfileViewModel(profile, preview));
         }
 
         ProfilesListBox.SelectedItem = previouslySelectedId.HasValue
@@ -64,17 +79,20 @@ public partial class ConnectionPickerWindow : Window
 
         ProfilesListBox.SelectedItem ??= _profiles.FirstOrDefault(p => p.IsDefault) ?? _profiles.FirstOrDefault();
 
-        if (_profiles.Count == 0)
-        {
-            PickerTabControl.SelectedIndex = 1;
-        }
-
         UpdateButtonStates();
     }
 
     private void ProfilesListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         UpdateButtonStates();
+
+        if (_suppressDatabaseAutoFetchOnSelectionChange)
+        {
+            return;
+        }
+
+        _databaseFetchDebounceTimer.Stop();
+        _ = RefreshDatabasesAsync();
     }
 
     private void UpdateButtonStates()
@@ -107,7 +125,7 @@ public partial class ConnectionPickerWindow : Window
     {
         _editingProfileId = existing?.Id;
         EditNameTextBox.Text = existing?.Name ?? string.Empty;
-        EditConnectionStringTextBox.Text = existing is not null ? _store.Decrypt(existing.Profile) : string.Empty;
+        EditConnectionStringTextBox.Text = existing?.ConnectionStringPreview ?? string.Empty;
         EditDefaultCheckBox.IsChecked = existing?.IsDefault ?? false;
 
         ListPanel.Visibility = Visibility.Collapsed;
@@ -151,7 +169,7 @@ public partial class ConnectionPickerWindow : Window
             return;
         }
 
-        await _store.SaveAsync(vm.Id, vm.Name, _store.Decrypt(vm.Profile), isDefault: true, CancellationToken.None);
+        await _store.SaveAsync(vm.Id, vm.Name, vm.ConnectionStringPreview, isDefault: true, CancellationToken.None);
         await LoadProfilesAsync();
     }
 
@@ -180,60 +198,35 @@ public partial class ConnectionPickerWindow : Window
 
     private void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
-        if (PickerTabControl.SelectedIndex == 0)
+        if (!TryGetBaseConnectionString(out var baseConnectionString, showWarningIfMissing: true))
         {
-            if (ProfilesListBox.SelectedItem is not ConnectionProfileViewModel vm)
-            {
-                MessageBox.Show(this, "Select a saved connection first.", "No Connection Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            SelectedConnectionString = _store.Decrypt(vm.Profile);
-            SelectedProfileName = vm.Name;
-            SelectedProfileId = vm.Id;
+            return;
         }
-        else if (PickerTabControl.SelectedIndex == 1)
-        {
-            var text = RawConnectionStringTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                MessageBox.Show(this, "Enter a connection string first.", "Missing Connection String", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
 
-            SelectedConnectionString = text;
-            SelectedProfileName = null;
-            SelectedProfileId = null;
-        }
-        else
-        {
-            if (!TryGetBaseConnectionString(out var baseConnectionString))
-            {
-                return;
-            }
+        SelectedConnectionString = string.IsNullOrWhiteSpace(_selectedDatabaseName)
+            ? baseConnectionString
+            : ConnectionStringHelper.WithDatabase(baseConnectionString, _selectedDatabaseName);
 
-            SelectedConnectionString = string.IsNullOrWhiteSpace(_selectedDatabaseName)
-                ? baseConnectionString
-                : ConnectionStringHelper.WithDatabase(baseConnectionString, _selectedDatabaseName);
-
-            var selectedProfile = ProfilesListBox.SelectedItem as ConnectionProfileViewModel;
-            SelectedProfileName = selectedProfile?.Name;
-            SelectedProfileId = selectedProfile?.Id;
-        }
+        var selectedProfile = ProfilesListBox.SelectedItem as ConnectionProfileViewModel;
+        SelectedProfileName = selectedProfile?.Name;
+        SelectedProfileId = selectedProfile?.Id;
 
         DialogResult = true;
     }
 
     /// <summary>
-    /// The connection string to browse/connect with from the Databases tab: whichever of the
-    /// Saved Connections selection or the Raw text currently has a value, regardless of which
-    /// tab happens to be active (the user picks one there, then switches to Databases).
+    /// The connection string to connect/browse-databases with: a selected saved profile takes
+    /// priority over the raw text box (they're mutually exclusive in practice - typing into the
+    /// raw box clears the saved selection, see RawConnectionStringTextBox_TextChanged), matching
+    /// the whole-window "one active source at a time" model now that both are always visible
+    /// instead of living on separate tabs. showWarningIfMissing is false for the auto-fetch path
+    /// (typing/browsing shouldn't pop a modal), true for the explicit Connect click.
     /// </summary>
-    private bool TryGetBaseConnectionString(out string connectionString)
+    private bool TryGetBaseConnectionString(out string connectionString, bool showWarningIfMissing)
     {
         if (ProfilesListBox.SelectedItem is ConnectionProfileViewModel vm)
         {
-            connectionString = _store.Decrypt(vm.Profile);
+            connectionString = vm.ConnectionStringPreview;
             return true;
         }
 
@@ -245,23 +238,79 @@ public partial class ConnectionPickerWindow : Window
         }
 
         connectionString = string.Empty;
-        MessageBox.Show(this, "Select a saved connection or enter a connection string first.", "No Connection Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (showWarningIfMissing)
+        {
+            MessageBox.Show(this, "Select a saved connection or enter a connection string first.", "No Connection Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
         return false;
     }
 
-    private async void BrowseDatabasesButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Typing into the raw box means "use this instead of whatever's selected" - clearing the
+    /// saved-profile selection keeps TryGetBaseConnectionString's precedence unambiguous. The
+    /// clear itself would otherwise trigger ProfilesListBox_SelectionChanged's immediate fetch on
+    /// every keystroke, defeating the debounce below, hence the suppress flag.
+    /// </summary>
+    private void RawConnectionStringTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
-        if (!TryGetBaseConnectionString(out var baseConnectionString))
+        if (ProfilesListBox.SelectedItem is not null)
         {
+            _suppressDatabaseAutoFetchOnSelectionChange = true;
+            ProfilesListBox.SelectedItem = null;
+            _suppressDatabaseAutoFetchOnSelectionChange = false;
+        }
+
+        _databaseFetchDebounceTimer.Stop();
+        _databaseFetchDebounceTimer.Start();
+    }
+
+    private void DatabaseFetchDebounceTimer_Tick(object? sender, EventArgs e)
+    {
+        _databaseFetchDebounceTimer.Stop();
+        _ = RefreshDatabasesAsync();
+    }
+
+    private void RefreshDatabasesButton_Click(object sender, RoutedEventArgs e)
+    {
+        _databaseFetchDebounceTimer.Stop();
+        _ = RefreshDatabasesAsync();
+    }
+
+    /// <summary>
+    /// Auto-fetches the database list for whichever connection is currently active - on load (if
+    /// a default profile is pre-selected), whenever the saved-profile selection changes, and
+    /// (debounced) whenever the raw text box changes. Cancels any still-in-flight fetch first so a
+    /// slow stale request can't overwrite a newer, faster one's results. Failures show inline in
+    /// DatabaseStatusTextBlock rather than a MessageBox, since this now fires from typing/browsing,
+    /// not just an explicit button click.
+    /// </summary>
+    private async Task RefreshDatabasesAsync()
+    {
+        _databasesFetchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _databasesFetchCts = cts;
+
+        if (!TryGetBaseConnectionString(out var baseConnectionString, showWarningIfMissing: false))
+        {
+            _allDatabases = new List<string>();
+            ApplyDatabaseFilter();
+            DatabaseStatusTextBlock.Text = NoConnectionStatusText;
             return;
         }
 
+        DatabaseStatusTextBlock.Text = "Loading databases...";
+
         var listConnectionString = ConnectionStringHelper.WithFallbackDatabase(baseConnectionString, "master");
 
-        BrowseDatabasesButton.IsEnabled = false;
         try
         {
-            var databases = await _databaseSchemaService.GetDatabasesAsync(listConnectionString, CancellationToken.None);
+            var databases = await _databaseSchemaService.GetDatabasesAsync(listConnectionString, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
             _allDatabases = databases
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -269,14 +318,22 @@ public partial class ConnectionPickerWindow : Window
                 .ToList();
 
             ApplyDatabaseFilter();
+            DatabaseStatusTextBlock.Text = string.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer fetch; leave whatever that one produces alone.
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Failed to list databases: {ex.Message}", "Browse Databases", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            BrowseDatabasesButton.IsEnabled = true;
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _allDatabases = new List<string>();
+            ApplyDatabaseFilter();
+            DatabaseStatusTextBlock.Text = $"Could not load databases: {ex.Message}";
         }
     }
 

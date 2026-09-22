@@ -20,6 +20,8 @@
         Foreground="{DynamicResource TextPrimaryBrush}">
     <Window.Resources>
         <converters:DirtyIndicatorConverter x:Key="DirtyIndicatorConverter" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+        <converters:HexColorToBrushConverter x:Key="HexColorToBrushConverter" />
     </Window.Resources>
     <Grid Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
@@ -283,14 +285,97 @@
                                         </ListBox.ItemContainerStyle>
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <StackPanel Orientation="Horizontal">
+                                                <StackPanel Orientation="Horizontal"
+                                                            Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                                                    <StackPanel.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Rename"
+                                                                      Command="{Binding PlacementTarget.DataContext.BeginRenameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                            <MenuItem Header="Pinned"
+                                                                      IsCheckable="True"
+                                                                      IsChecked="{Binding PlacementTarget.DataContext.IsPinned, RelativeSource={RelativeSource AncestorType=ContextMenu}, Mode=TwoWay}" />
+                                                            <MenuItem Header="Color">
+                                                                <MenuItem Header="None"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                                <Separator />
+                                                                <MenuItem Header="Red" CommandParameter="#E5484D"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                                    <MenuItem.Icon>
+                                                                        <Ellipse Width="10" Height="10" Fill="#E5484D" />
+                                                                    </MenuItem.Icon>
+                                                                </MenuItem>
+                                                                <MenuItem Header="Orange" CommandParameter="#F76B15"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                                    <MenuItem.Icon>
+                                                                        <Ellipse Width="10" Height="10" Fill="#F76B15" />
+                                                                    </MenuItem.Icon>
+                                                                </MenuItem>
+                                                                <MenuItem Header="Green" CommandParameter="#46A758"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                                    <MenuItem.Icon>
+                                                                        <Ellipse Width="10" Height="10" Fill="#46A758" />
+                                                                    </MenuItem.Icon>
+                                                                </MenuItem>
+                                                                <MenuItem Header="Blue" CommandParameter="#0091FF"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                                    <MenuItem.Icon>
+                                                                        <Ellipse Width="10" Height="10" Fill="#0091FF" />
+                                                                    </MenuItem.Icon>
+                                                                </MenuItem>
+                                                                <MenuItem Header="Purple" CommandParameter="#8E4EC6"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                                    <MenuItem.Icon>
+                                                                        <Ellipse Width="10" Height="10" Fill="#8E4EC6" />
+                                                                    </MenuItem.Icon>
+                                                                </MenuItem>
+                                                                <MenuItem Header="Slate" CommandParameter="#6B7280"
+                                                                          Command="{Binding PlacementTarget.DataContext.SetColorCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                                                    <MenuItem.Icon>
+                                                                        <Ellipse Width="10" Height="10" Fill="#6B7280" />
+                                                                    </MenuItem.Icon>
+                                                                </MenuItem>
+                                                            </MenuItem>
+                                                            <Separator />
+                                                            <MenuItem Header="Close"
+                                                                      Command="{Binding PlacementTarget.Tag.QueryDocuments.CloseDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        </ContextMenu>
+                                                    </StackPanel.ContextMenu>
+
+                                                    <Rectangle Width="3"
+                                                               Margin="0,2,6,2"
+                                                               RadiusX="1.5"
+                                                               RadiusY="1.5"
+                                                               Fill="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}" />
+                                                    <Path Data="{StaticResource Icon.Bookmark}"
+                                                          Width="10"
+                                                          Height="10"
+                                                          Margin="0,0,4,0"
+                                                          Stretch="Uniform"
+                                                          VerticalAlignment="Center"
+                                                          Fill="{DynamicResource TextSecondaryBrush}"
+                                                          ToolTip="Pinned"
+                                                          Visibility="{Binding IsPinned, Converter={StaticResource DirtyIndicatorConverter}}" />
                                                     <Ellipse Width="6"
                                                              Height="6"
                                                              Margin="0,0,6,0"
                                                              VerticalAlignment="Center"
                                                              Fill="{DynamicResource AccentBrush}"
                                                              Visibility="{Binding IsDirty, Converter={StaticResource DirtyIndicatorConverter}}" />
-                                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Title}"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="{Binding IsRenaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                                        <TextBlock.InputBindings>
+                                                            <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding BeginRenameCommand}" />
+                                                        </TextBlock.InputBindings>
+                                                    </TextBlock>
+                                                    <TextBox Text="{Binding PendingTitle, UpdateSourceTrigger=PropertyChanged}"
+                                                             VerticalAlignment="Center"
+                                                             Width="90"
+                                                             Visibility="{Binding IsRenaming, Converter={StaticResource DirtyIndicatorConverter}}"
+                                                             IsVisibleChanged="QueryDocumentRenameTextBox_IsVisibleChanged"
+                                                             PreviewKeyDown="QueryDocumentRenameTextBox_PreviewKeyDown"
+                                                             LostFocus="QueryDocumentRenameTextBox_LostFocus" />
                                                     <Button Margin="8,0,0,0"
                                                             Width="16"
                                                             Height="16"

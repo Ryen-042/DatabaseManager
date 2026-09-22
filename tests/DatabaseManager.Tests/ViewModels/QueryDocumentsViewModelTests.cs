@@ -159,4 +159,58 @@ public sealed class QueryDocumentsViewModelTests
 
         Assert.DoesNotContain(selected, vm.Documents);
     }
+
+    [Fact]
+    public void Pinning_MovesDocumentToEndOfThePinnedGroup()
+    {
+        var vm = new TestHarness().CreateViewModel();
+        var first = vm.Documents[0];
+        vm.NewDocumentCommand.Execute(null);
+        var second = vm.SelectedDocument!;
+        vm.NewDocumentCommand.Execute(null);
+        var third = vm.SelectedDocument!;
+
+        first.IsPinned = true;
+        third.IsPinned = true;
+
+        Assert.Equal(new[] { first, third, second }, vm.Documents);
+    }
+
+    [Fact]
+    public void Unpinning_MovesDocumentToStartOfTheUnpinnedGroup()
+    {
+        var vm = new TestHarness().CreateViewModel();
+        var first = vm.Documents[0];
+        vm.NewDocumentCommand.Execute(null);
+        var second = vm.SelectedDocument!;
+        vm.NewDocumentCommand.Execute(null);
+        var third = vm.SelectedDocument!;
+
+        first.IsPinned = true;
+        second.IsPinned = true;
+        // Order is now: first, second, third (both pinned docs at the front).
+        first.IsPinned = false;
+
+        Assert.Equal(new[] { second, first, third }, vm.Documents);
+    }
+
+    [Fact]
+    public void ClosingAPinnedDocument_StopsItFromAffectingFurtherReordering()
+    {
+        var vm = new TestHarness().CreateViewModel();
+        var first = vm.Documents[0];
+        vm.NewDocumentCommand.Execute(null);
+        var second = vm.SelectedDocument!;
+        first.IsPinned = true;
+
+        vm.CloseDocumentCommand.Execute(first);
+        // If the closed document's PropertyChanged subscription weren't removed, flipping
+        // IsPinned on it afterward would throw (or silently reorder a collection it's no longer
+        // in) instead of being inert.
+        first.IsPinned = false;
+
+        Assert.DoesNotContain(first, vm.Documents);
+        Assert.Single(vm.Documents);
+        Assert.Same(second, vm.Documents[0]);
+    }
 }

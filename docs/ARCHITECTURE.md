@@ -28,7 +28,7 @@ Folder guide:
 - `Commands/` — `AppCommandRegistry` (`ICommandRegistry`) is the single source of truth for every app-level action: id, category, icon key, optional keyboard gesture, and the backing `ICommand`. The top menu, the command palette (Ctrl+Shift+P), the shortcuts help panel (Ctrl+/), and `Window.InputBindings` are all built from this one registry, so a shortcut can't drift out of sync between them.
 - `ViewModels/` — one ViewModel per extracted tab (see above), plus `MainWindowViewModel` as the composition root exposing them. Extracted ViewModels take callbacks from `MainWindow` for anything outside their own tab's concern (switching output tabs, clipboard access, status text, rendering shared Results) rather than holding a reference to `MainWindow` or any XAML element — this keeps them independently constructible and testable with fakes.
 - `Views/` — a XAML `UserControl` per extracted tab, bound to its ViewModel via a property on `MainWindowViewModel`.
-- `Windows/` — standalone dialogs (`ConnectionPickerWindow` — Saved Connections / Raw Connection String / Databases tabs, the last browsing `sys.databases` on whichever of the other two currently has a connection string and rewriting `Initial Catalog` via `ConnectionStringHelper` when a database is picked, `CommandPaletteWindow`, `ShortcutsHelpWindow`, `QueryParametersWindow`, `DeleteColumnsSelectionWindow`), each with a small constructor-in/result-property-out contract.
+- `Windows/` — standalone dialogs (`ConnectionPickerWindow` — a single unified view (not tabs): saved connections with a dimmed/ellipsis-trimmed connection-string preview, a raw-connection-string fallback box, and a Databases section that auto-fetches `sys.databases` on whichever of the two is currently active and rewrites `Initial Catalog` via `ConnectionStringHelper` when a database is picked, `CommandPaletteWindow`, `ShortcutsHelpWindow`, `QueryParametersWindow`, `DeleteColumnsSelectionWindow`), each with a small constructor-in/result-property-out contract.
 - `Controls/` — `AppMenu` (generated from the command registry), `ToastHost` (renders `IToastService.Toasts`).
 - `Converters/`, `Behaviors/` — small reusable XAML-facing pieces (a value converter, a DataGrid attached-property behavior) pulled out of `MainWindow.xaml.cs` once they had more than one consumer.
 - `Editors/` — `ISqlTextEditor` abstraction over AvalonEdit, used by both the SQL Editor tab and the Edit Rows query box.
@@ -52,7 +52,7 @@ Every DB-touching service is thin I/O wrapped around **pure, independently-testa
 
 This split exists because every method on `RowEditService`/`StoredProcedureExecutionService`/`SqlServerQueryService` opens a real `SqlConnection`, so they can't be unit tested directly — but the decision logic inside them (is this a CREATE PROCEDURE? does the no-PK delete's matched row count agree with what was intended? what's the null-safe WHERE predicate?) is exactly the kind of thing worth protecting with tests before anyone touches the code that calls it.
 
-Other services: `IDatabaseSchemaService`/`SqlServerSchemaService` (table/column/FK/procedure discovery, plus `GetDatabasesAsync` for the connection picker's Databases tab), `ITemplateStoreService`/`TemplateStoreService` (query templates, JSON-persisted), `IExportService`/`ExportService` (CSV/Excel), `IConnectionProfileStoreService`/`ConnectionProfileStoreService` (saved connections, DPAPI-encrypted), `ConnectionStringHelper` (pure `SqlConnectionStringBuilder` wrapper so the WPF layer never references `Microsoft.Data.SqlClient` directly), `DisplayValueFormatter` (grid value formatting).
+Other services: `IDatabaseSchemaService`/`SqlServerSchemaService` (table/column/FK/procedure discovery, plus `GetDatabasesAsync` for the connection picker's Databases section), `ITemplateStoreService`/`TemplateStoreService` (query templates, JSON-persisted), `IExportService`/`ExportService` (CSV/Excel), `IConnectionProfileStoreService`/`ConnectionProfileStoreService` (saved connections, DPAPI-encrypted), `ConnectionStringHelper` (pure `SqlConnectionStringBuilder` wrapper so the WPF layer never references `Microsoft.Data.SqlClient` directly), `DisplayValueFormatter` (grid value formatting).
 
 ## Runtime Data Flow
 
@@ -93,16 +93,16 @@ Other services: `IDatabaseSchemaService`/`SqlServerSchemaService` (table/column/
 
 ## Testing Strategy
 
-`tests/DatabaseManager.Tests` covers pure/deterministic logic in both projects — 183 tests as of this writing, across:
+`tests/DatabaseManager.Tests` covers pure/deterministic logic in both projects — 196 tests as of this writing, across:
 
 - **Core**: the pure-logic classes listed in the table above, plus `SqlQueryAssistantService`, `TemplateStoreService`, `ExportService`, `ConnectionProfileStoreService`, `ConnectionStringHelper`.
-- **WPF**: extracted ViewModels (`SchemaAssistantViewModel`, `QueryDocumentViewModel`, `ProcedureRunnerViewModel`, `TemplatesPanelViewModel`, `MainWindowViewModel`), each tested against a fake implementation of whichever Core service interface it depends on (no real database needed) — plus the command infrastructure (`AppCommandRegistry`, `FuzzyMatcher`, `KeyGestureFormatter`).
+- **WPF**: extracted ViewModels (`SchemaAssistantViewModel`, `QueryDocumentViewModel`, `QueryDocumentsViewModel`, `QueryDocumentTab`, `ProcedureRunnerViewModel`, `TemplatesPanelViewModel`, `MainWindowViewModel`, `ConnectionProfileViewModel`), each tested against a fake implementation of whichever Core service interface it depends on (no real database needed) — plus the command infrastructure (`AppCommandRegistry`, `FuzzyMatcher`, `KeyGestureFormatter`).
 
 **No database-integration tests exist.** `RowEditService`, `StoredProcedureExecutionService`, and `SqlServerQueryService` each open a real `SqlConnection` in every public method, so their I/O plumbing itself is untested — only the decision logic factored out of them is. Treat changes to that plumbing as higher-risk and verify manually against a real connection.
 
 ## Extension Points
 
-- Multi-tab query documents (several SQL Editor/Results pairs open at once) — designed for but not built; `QueryDocumentViewModel`'s shape was chosen to generalize to this later.
+- Drag-to-reorder query documents — pinning already sorts documents to the front (see `QueryDocumentsViewModel`), but manual reordering within/across that isn't built.
 - Redesigning Edit Rows' row model so it can move to a real ViewModel (see above) — a bigger, separate decision from the rest of the MVVM migration.
 - Add provider abstraction for non-SQL-Server engines.
 - Add optimistic concurrency support in row edit operations.

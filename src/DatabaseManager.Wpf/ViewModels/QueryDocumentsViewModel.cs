@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -10,6 +12,10 @@ namespace DatabaseManager.Wpf.ViewModels;
 /// is currently selected - switching the selection here saves the outgoing document's text out
 /// of the shared editor and loads the incoming one's back in, via callbacks MainWindow supplies,
 /// the same pattern every other extracted ViewModel uses for things outside its own concern.
+///
+/// Also reorders Documents when a document's IsPinned flips (pinned documents sort to the front)
+/// - QueryDocumentTab owns the flag itself but not the reordering, since that's a collection-level
+/// concern; this class listens for the PropertyChanged notification instead.
 /// </summary>
 public sealed partial class QueryDocumentsViewModel : ObservableObject
 {
@@ -65,7 +71,38 @@ public sealed partial class QueryDocumentsViewModel : ObservableObject
         }
     }
 
-    private QueryDocumentTab CreateDocument() => new($"Query {_nextDocumentNumber++}");
+    private QueryDocumentTab CreateDocument()
+    {
+        var document = new QueryDocumentTab($"Query {_nextDocumentNumber++}");
+        document.PropertyChanged += OnDocumentPropertyChanged;
+        return document;
+    }
+
+    private void OnDocumentPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(QueryDocumentTab.IsPinned) && sender is QueryDocumentTab document)
+        {
+            ReorderAfterPinChange(document);
+        }
+    }
+
+    /// <summary>
+    /// Removing then reinserting at "count of remaining pinned documents" places a newly-pinned
+    /// document at the end of the pinned group, and a newly-unpinned document at the start of the
+    /// unpinned group - the same formula works for both directions.
+    /// </summary>
+    private void ReorderAfterPinChange(QueryDocumentTab document)
+    {
+        var currentIndex = Documents.IndexOf(document);
+        if (currentIndex < 0)
+        {
+            return;
+        }
+
+        Documents.RemoveAt(currentIndex);
+        var insertIndex = Documents.TakeWhile(d => d.IsPinned).Count();
+        Documents.Insert(insertIndex, document);
+    }
 
     [RelayCommand]
     private void NewDocument()
@@ -94,6 +131,8 @@ public sealed partial class QueryDocumentsViewModel : ObservableObject
         {
             return;
         }
+
+        document.PropertyChanged -= OnDocumentPropertyChanged;
 
         var wasSelected = ReferenceEquals(SelectedDocument, document);
 

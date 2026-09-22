@@ -6,9 +6,9 @@ DatabaseManager combines query authoring, schema exploration, template managemen
 
 ## Highlights
 
-- Query tab with multiple document buffers (Ctrl+T/Ctrl+W, each with its own text, dirty indicator, and remembered results), multiline query authoring, context-aware autocomplete (keywords, tables, columns, FK-based join hints, recent fragments), and multi-batch script execution (`GO`-separated batches run sequentially, so a copied "Script as CREATE" with `USE`/`SET .../GO` boilerplate just works).
+- Query tab with multiple document buffers (Ctrl+T/Ctrl+W, each with its own text, dirty indicator, and remembered results), each document renameable (double-click its title, or right-click), colorable, and pinnable (right-click; pinned documents sort to the front), multiline query authoring, context-aware autocomplete (keywords, tables, columns, FK-based join hints, recent fragments), and multi-batch script execution (`GO`-separated batches run sequentially, so a copied "Script as CREATE" with `USE`/`SET .../GO` boilerplate just works).
 - Schema Assistant panel for tables, procedures, and query templates, with script-generation context menus (SELECT/INSERT/UPDATE/DELETE/EXEC, Drop/Drop+Recreate Table, Drop Procedure/Generate ALTER Script).
-- Saved connection profiles (DPAPI-encrypted at rest) alongside a raw connection-string fallback, with a designatable default that auto-connects on startup.
+- Saved connection profiles (DPAPI-encrypted at rest, previewed dimmed under each name) alongside a raw connection-string fallback, with a designatable default that auto-connects on startup, and an auto-fetched database picker for the connected server.
 - Command palette (Ctrl+Shift+P), searchable shortcuts help panel (Ctrl+/), and a top menu — all driven from one command registry, so they never drift out of sync.
 - Result viewing and export to CSV and Excel, with expandable per-statement sections for multi-statement/multi-batch results, and cell/row marking.
 - Stored procedure runner with parameter input.
@@ -93,7 +93,7 @@ make test CONFIG=Debug
 ### 1. Connect and load metadata
 
 1. Click the connection summary button in the toolbar to open the connection picker.
-2. Pick a saved profile, enter a raw connection string on the picker's fallback tab, or use the Databases tab to browse the databases on a saved/raw connection's server and pick one; optionally mark a profile as the default so it auto-connects on startup.
+2. Pick a saved profile (its connection string previews dimmed underneath) or enter a raw connection string; the picker auto-fetches that server's databases so you can pick one without pressing anything extra. Optionally mark a profile as the default so it auto-connects on startup.
 3. Set the timeout (seconds) in the toolbar.
 4. Connecting loads schema metadata automatically.
 
@@ -189,7 +189,7 @@ The palette and help panel always reflect the full, current set — check there 
 
 ## Testing Coverage
 
-183 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction and the no-PK delete safeguard, procedure parameter mapping, query-assistant SQL generation, template/connection-profile/connection-string/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
+196 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction and the no-PK delete safeguard, procedure parameter mapping, query-assistant SQL generation, template/connection-profile/connection-string/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
 
 See: [tests/DatabaseManager.Tests](tests/DatabaseManager.Tests)
 
