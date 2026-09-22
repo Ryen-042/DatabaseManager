@@ -22,7 +22,16 @@ DatabaseManager combines query authoring, schema exploration, template managemen
 
 ## Screenshots
 
-Save the screenshots under `docs/images/` using the filenames below, then they will render here automatically.
+Screenshots live under `docs/images/`. **If you recapture any of these, use a placeholder/demo
+connection profile first** — the Saved Connections list and the raw connection-string box both
+render the connection string in full, password included.
+
+### Query Tab
+
+Multiple open documents in the strip, one running a query with results below. (Pin/color aren't
+shown here — capturing those needs a right-click context menu interaction.)
+
+![Query Tab](docs/images/query-tab.png)
 
 ### Edit Rows Tab
 
@@ -31,6 +40,25 @@ Save the screenshots under `docs/images/` using the filenames below, then they w
 ### Schema Tab
 
 ![Schema Tab](docs/images/schema-tab.png)
+
+### Procedure Runner Tab
+
+![Procedure Runner Tab](docs/images/procedure-runner-tab.png)
+
+### Connection Picker
+
+The unified view: saved connections with their (dimmed) connection string preview, the raw
+connection-string box, and the auto-fetched Databases list. The two real saved profiles' previews
+are redacted here; the visible one is a throwaway Windows-Auth demo entry used only to
+demonstrate the layout.
+
+![Connection Picker](docs/images/connection-picker.png)
+
+### Command Palette
+
+`Ctrl+Shift+P` (or View menu → Command Palette), fuzzy-searchable.
+
+![Command Palette](docs/images/command-palette.png)
 
 ## Tech Stack
 
