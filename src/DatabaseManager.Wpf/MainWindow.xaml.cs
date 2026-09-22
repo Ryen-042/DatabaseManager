@@ -364,7 +364,7 @@ public partial class MainWindow : Window
 
     private async void ConnectionSummaryButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new ConnectionPickerWindow(_connectionProfileStoreService, ConnectionStringTextBox.Text) { Owner = this };
+        var picker = new ConnectionPickerWindow(_connectionProfileStoreService, _databaseSchemaService, ConnectionStringTextBox.Text) { Owner = this };
         if (picker.ShowDialog() != true || picker.SelectedConnectionString is null)
         {
             return;

@@ -4,6 +4,8 @@ namespace DatabaseManager.Core.Services.Schema;
 
 public interface IDatabaseSchemaService
 {
+    Task<IReadOnlyList<string>> GetDatabasesAsync(string connectionString, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TableSchemaInfo>> GetTablesAsync(string connectionString, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ForeignKeySchemaInfo>> GetForeignKeysAsync(string connectionString, CancellationToken cancellationToken);

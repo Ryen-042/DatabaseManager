@@ -15,8 +15,12 @@ public sealed class SchemaAssistantViewModelTests
         public List<ColumnSchemaInfo> Columns { get; set; } = new();
         public List<StoredProcedureParameterInfo> Parameters { get; set; } = new();
         public string? ProcedureDefinition { get; set; } = "CREATE PROCEDURE dbo.Foo AS SELECT 1;";
+        public List<string> Databases { get; set; } = new();
         public Exception? ThrowOnGetTables { get; set; }
         public Exception? ThrowOnGetColumns { get; set; }
+
+        public Task<IReadOnlyList<string>> GetDatabasesAsync(string connectionString, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<string>>(Databases);
 
         public Task<IReadOnlyList<TableSchemaInfo>> GetTablesAsync(string connectionString, CancellationToken cancellationToken)
             => ThrowOnGetTables is null

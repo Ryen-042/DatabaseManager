@@ -93,7 +93,7 @@ make test CONFIG=Debug
 ### 1. Connect and load metadata
 
 1. Click the connection summary button in the toolbar to open the connection picker.
-2. Either pick a saved profile or enter a raw connection string on the picker's fallback tab; optionally mark a profile as the default so it auto-connects on startup.
+2. Pick a saved profile, enter a raw connection string on the picker's fallback tab, or use the Databases tab to browse the databases on a saved/raw connection's server and pick one; optionally mark a profile as the default so it auto-connects on startup.
 3. Set the timeout (seconds) in the toolbar.
 4. Connecting loads schema metadata automatically.
 
@@ -189,7 +189,7 @@ The palette and help panel always reflect the full, current set — check there 
 
 ## Testing Coverage
 
-168 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction and the no-PK delete safeguard, procedure parameter mapping, query-assistant SQL generation, template/connection-profile/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
+183 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction and the no-PK delete safeguard, procedure parameter mapping, query-assistant SQL generation, template/connection-profile/connection-string/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
 
 See: [tests/DatabaseManager.Tests](tests/DatabaseManager.Tests)
 

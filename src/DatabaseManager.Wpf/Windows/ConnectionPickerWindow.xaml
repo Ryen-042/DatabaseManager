@@ -155,6 +155,48 @@
                              TextWrapping="Wrap" />
                 </Grid>
             </TabItem>
+
+            <TabItem Header="Databases">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Margin="0,0,0,8"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="Pick a saved connection or enter a raw connection string above, then browse the databases on that server and pick one." />
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="BrowseDatabasesButton"
+                                Content="Browse Databases"
+                                MinWidth="130"
+                                Margin="0,0,8,0"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Click="BrowseDatabasesButton_Click" />
+                        <TextBox x:Name="DatabaseSearchTextBox"
+                                 Width="180"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Filter databases"
+                                 TextChanged="DatabaseSearchTextBox_TextChanged" />
+                    </StackPanel>
+
+                    <CheckBox x:Name="ShowSystemDatabasesCheckBox"
+                              Grid.Row="2"
+                              Content="Show system databases"
+                              Margin="0,0,0,8"
+                              Checked="ShowSystemDatabasesCheckBox_Changed"
+                              Unchecked="ShowSystemDatabasesCheckBox_Changed" />
+
+                    <ListBox x:Name="DatabasesListBox"
+                             Grid.Row="3"
+                             SelectionChanged="DatabasesListBox_SelectionChanged" />
+                </Grid>
+            </TabItem>
         </TabControl>
 
         <StackPanel Grid.Row="1"
