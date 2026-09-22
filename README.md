@@ -22,10 +22,6 @@ DatabaseManager combines query authoring, schema exploration, template managemen
 
 ## Screenshots
 
-Screenshots live under `docs/images/`. **If you recapture any of these, use a placeholder/demo
-connection profile first** — the Saved Connections list and the raw connection-string box both
-render the connection string in full, password included.
-
 ### Query Tab
 
 Multiple open documents in the strip, one running a query with results below. (Pin/color aren't
@@ -47,10 +43,8 @@ shown here — capturing those needs a right-click context menu interaction.)
 
 ### Connection Picker
 
-The unified view: saved connections with their (dimmed) connection string preview, the raw
-connection-string box, and the auto-fetched Databases list. The two real saved profiles' previews
-are redacted here; the visible one is a throwaway Windows-Auth demo entry used only to
-demonstrate the layout.
+The unified view: saved connections with their connection string preview, the raw
+connection-string box, and the auto-fetched Databases list.
 
 ![Connection Picker](docs/images/connection-picker.png)
 
