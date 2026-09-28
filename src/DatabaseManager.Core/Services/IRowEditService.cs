@@ -16,16 +16,13 @@ public interface IRowEditService
         int commandTimeoutSeconds,
         CancellationToken cancellationToken);
 
-    Task<int> SaveUpdatedRowsAsync(
-        string connectionString,
-        string schemaName,
-        string tableName,
-        IReadOnlyList<ColumnSchemaInfo> columns,
-        IReadOnlyList<RowUpdateRequest> rowUpdates,
-        int commandTimeoutSeconds,
-        CancellationToken cancellationToken);
-
-    Task<int> SaveRowChangesAsync(
+    /// <summary>
+    /// Saves updates (by primary key, with an optimistic-concurrency check against the row's
+    /// original values - see RowEditSqlBuilder.BuildConcurrencyMatchColumns - when the table has
+    /// one) and inserts transactionally. WasExecuted is false and nothing is committed if any
+    /// update hits a concurrency conflict; see RowSaveResult.
+    /// </summary>
+    Task<RowSaveResult> SaveRowChangesAsync(
         string connectionString,
         string schemaName,
         string tableName,

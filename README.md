@@ -17,6 +17,7 @@ DatabaseManager combines query authoring, schema exploration, template managemen
   - Optional `WHERE` predicate and `ORDER BY` expression.
   - Two-way sync between filter inputs and generated editable SQL, with comments in custom SQL preserved across mode toggles.
   - PK-based update and delete operations in SQL transactions; deleting without a primary key uses a user-selected-column predicate with an intended-vs-matched row-count safeguard.
+  - Optimistic concurrency on PK-based updates: if a row changed since it was loaded (checked via its `rowversion` column if it has one, otherwise every other column), the save is blocked and reported instead of silently overwriting someone else's change.
 - Dark and light themes, toast notifications for background failures, hand-authored vector icons throughout.
 - Schema Assistant panel toggle and keyboard shortcuts.
 
@@ -211,7 +212,7 @@ The palette and help panel always reflect the full, current set — check there 
 
 ## Testing Coverage
 
-196 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction and the no-PK delete safeguard, procedure parameter mapping, query-assistant SQL generation, template/connection-profile/connection-string/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
+208 tests across pure/deterministic logic in both projects: SQL parsing/batch-splitting, row-edit SQL construction (including the no-PK delete safeguard and the optimistic-concurrency match-column selection), procedure parameter mapping, query-assistant SQL generation, template/connection-profile/connection-string/export storage, the command registry, and every extracted ViewModel (tested against fakes, no database required). No database-integration tests exist — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-strategy).
 
 See: [tests/DatabaseManager.Tests](tests/DatabaseManager.Tests)
 

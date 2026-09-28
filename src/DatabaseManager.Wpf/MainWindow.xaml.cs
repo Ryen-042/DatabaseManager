@@ -688,7 +688,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var affectedRows = await _rowEditService.SaveRowChangesAsync(
+            var result = await _rowEditService.SaveRowChangesAsync(
                 connectionString,
                 _selectedTable.SchemaName,
                 _selectedTable.TableName,
@@ -698,8 +698,31 @@ public partial class MainWindow : Window
                 ParseTimeoutSeconds(),
                 CancellationToken.None);
 
+            if (!result.WasExecuted)
+            {
+                // Concurrency conflict on one or more rows - nothing was committed (all-or-
+                // nothing, same as the no-PK delete mismatch safeguard). Deliberately skip
+                // AcceptChanges() so the user's pending edits stay visible/color-coded in the
+                // grid instead of being silently discarded; Load/Reload shows the current values.
+                var conflictDetails = string.Join(
+                    Environment.NewLine,
+                    result.ConflictedRowKeys.Select(key => string.Join(", ", key.Select(x => $"{x.Key}={x.Value}"))));
+
+                MessageBox.Show(
+                    this,
+                    $"{result.ConflictedRowKeys.Count} row(s) were changed by someone else since you loaded them, so nothing was saved:"
+                        + $"{Environment.NewLine}{Environment.NewLine}{conflictDetails}"
+                        + $"{Environment.NewLine}{Environment.NewLine}Reload to see the latest values, then reapply your edit if it's still needed.",
+                    "Save Conflict",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                SetStatus($"Save canceled: {result.ConflictedRowKeys.Count} row(s) changed since loading (nothing was saved).");
+                return false;
+            }
+
             _editableResultsTable.AcceptChanges();
-            SetStatus($"Saved changes successfully ({affectedRows} row(s) affected).");
+            SetStatus($"Saved changes successfully ({result.AffectedRows} row(s) affected).");
             RefreshEditRowsVisualStates();
             return true;
         }

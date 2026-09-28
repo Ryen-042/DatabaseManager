@@ -46,7 +46,7 @@ Every DB-touching service is thin I/O wrapped around **pure, independently-testa
 | Concern | DB-coupled service | Pure logic pulled out |
 |---|---|---|
 | Ad-hoc SQL execution | `SqlServerQueryService` | `QueryOutputModeParser` (`-- full` directive, CREATE/ALTER routine detection), `QueryBatchSplitter` (splits on `GO` batch separators) |
-| Row editing | `RowEditService` | `RowEditSqlBuilder` (UPDATE/INSERT/DELETE statement text, the no-PK delete mismatch safeguard's predicates), `RowEditQueryTextSync` (Edit Rows' structured-inputs⟷SQL-text conversion) |
+| Row editing | `RowEditService` | `RowEditSqlBuilder` (UPDATE/INSERT/DELETE statement text, the no-PK delete mismatch safeguard's predicates, and `BuildConcurrencyMatchColumns`/`IsRowVersionColumn`/`IsComparisonUnsafeColumn` for the optimistic-concurrency WHERE predicate below), `RowEditQueryTextSync` (Edit Rows' structured-inputs⟷SQL-text conversion) |
 | Stored procedures | `StoredProcedureExecutionService` | `ProcedureParameterMapper` (editor-row → execution-parameter mapping, NULL handling) |
 | Schema-derived scripts | — | `SqlQueryAssistantService` (already pure) |
 
@@ -76,7 +76,7 @@ Other services: `IDatabaseSchemaService`/`SqlServerSchemaService` (table/column/
 1. User selects a table (via Schema Assistant) and opens Edit Rows.
 2. Structured mode (Top/Filter/Order By) or custom SQL mode (the query box is authoritative) produce the SQL — `RowEditQueryTextSync` handles both directions, with `MainWindow`'s custom-mode flag deciding which one is authoritative at any moment so the other is never overwritten (this is how comments in custom SQL survive mode toggles).
 3. `IRowEditService.LoadTopRowsAsync` loads rows into a `DataTable` bound directly to the grid.
-4. On save, `MainWindow` computes modified/inserted rows from the `DataTable`'s row states; `RowEditSqlBuilder` builds the UPDATE/INSERT statement text; `IRowEditService.SaveRowChangesAsync` executes them in one transaction.
+4. On save, `MainWindow` computes modified/inserted rows from the `DataTable`'s row states (capturing every column's `DataRowVersion.Original`, not just the PK's); `RowEditSqlBuilder` builds the UPDATE/INSERT statement text; `IRowEditService.SaveRowChangesAsync` executes them in one transaction. Updates on a primary-keyed table carry an **optimistic-concurrency check**: the WHERE clause also matches the row's original value in its `rowversion`/`timestamp` column if it has one, or every other comparable column otherwise (`RowEditSqlBuilder.BuildConcurrencyMatchColumns`) — if a row's real database values no longer match what was loaded, that row's UPDATE affects 0 rows, the whole save is rolled back (all-or-nothing, mirroring the no-PK delete mismatch below), and `RowSaveResult.ConflictedRowKeys` reports which row(s) so `MainWindow` can tell the user instead of silently losing their edit or someone else's.
 5. On delete: with a primary key, deletes by key in a transaction. Without one, `IRowEditService.DeleteRowsBySelectedColumnsAsync` first validates that the count of rows matching the user-selected-column predicate equals the intended selection, and refuses to proceed (offering the generated DELETE script for manual review instead) if they disagree.
 
 ### Stored procedure flow
@@ -93,7 +93,7 @@ Other services: `IDatabaseSchemaService`/`SqlServerSchemaService` (table/column/
 
 ## Testing Strategy
 
-`tests/DatabaseManager.Tests` covers pure/deterministic logic in both projects — 196 tests as of this writing, across:
+`tests/DatabaseManager.Tests` covers pure/deterministic logic in both projects — 208 tests as of this writing, across:
 
 - **Core**: the pure-logic classes listed in the table above, plus `SqlQueryAssistantService`, `TemplateStoreService`, `ExportService`, `ConnectionProfileStoreService`, `ConnectionStringHelper`.
 - **WPF**: extracted ViewModels (`SchemaAssistantViewModel`, `QueryDocumentViewModel`, `QueryDocumentsViewModel`, `QueryDocumentTab`, `ProcedureRunnerViewModel`, `TemplatesPanelViewModel`, `MainWindowViewModel`, `ConnectionProfileViewModel`), each tested against a fake implementation of whichever Core service interface it depends on (no real database needed) — plus the command infrastructure (`AppCommandRegistry`, `FuzzyMatcher`, `KeyGestureFormatter`).
@@ -105,5 +105,4 @@ Other services: `IDatabaseSchemaService`/`SqlServerSchemaService` (table/column/
 - Drag-to-reorder query documents — pinning already sorts documents to the front (see `QueryDocumentsViewModel`), but manual reordering within/across that isn't built.
 - Redesigning Edit Rows' row model so it can move to a real ViewModel (see above) — a bigger, separate decision from the rest of the MVVM migration.
 - Add provider abstraction for non-SQL-Server engines.
-- Add optimistic concurrency support in row edit operations.
 - A database-integration test suite (trait-gated, against a real or LocalDB SQL Server) for the services listed under Testing Strategy's caveat.

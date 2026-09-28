@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using DatabaseManager.Core.Models.Schema;
 
 namespace DatabaseManager.Core.Services;
 
@@ -50,6 +51,47 @@ public static class RowEditSqlBuilder
 
     public static string BuildNullSafeWhereClause(IReadOnlyList<string> columns) => string.Join(" AND ", columns.Select(column =>
         $"((@key_{column} IS NULL AND [{EscapeIdentifier(column)}] IS NULL) OR [{EscapeIdentifier(column)}] = @key_{column})"));
+
+    /// <summary>Rowversion/timestamp columns are server-generated (never in a SET clause) and change on every row write, making them an ideal single-column concurrency check.</summary>
+    public static bool IsRowVersionColumn(ColumnSchemaInfo column) =>
+        column.DataType.Equals("rowversion", StringComparison.OrdinalIgnoreCase)
+        || column.DataType.Equals("timestamp", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// SQL Server rejects "=" entirely on these types - a column of one of them can still be SET,
+    /// but can never appear in an equality WHERE predicate, so BuildConcurrencyMatchColumns must
+    /// exclude it from the comparison set below or every save against such a table would throw.
+    /// </summary>
+    public static bool IsComparisonUnsafeColumn(ColumnSchemaInfo column)
+    {
+        string[] unsafeTypes = ["text", "ntext", "image", "xml", "geography", "geometry"];
+        return unsafeTypes.Contains(column.DataType, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Optimistic-concurrency match columns for a primary-keyed UPDATE: the PK (identity) plus
+    /// whatever proves the row hasn't changed since it was loaded - a single rowversion/timestamp
+    /// column if the table has one (cheap, exact), otherwise every other comparable column (full
+    /// row check, the same default EF Core would use with no explicit concurrency token). Only
+    /// meaningful when a primary key exists - the no-PK path already matches on every column via
+    /// a different mechanism (RowEditService's own THROW-guarded statement) and doesn't call this.
+    /// </summary>
+    public static IReadOnlyList<string> BuildConcurrencyMatchColumns(IReadOnlyList<ColumnSchemaInfo> columns)
+    {
+        var primaryKeys = columns.Where(c => c.IsPrimaryKey).Select(c => c.ColumnName).ToList();
+
+        var rowVersionColumn = columns.FirstOrDefault(IsRowVersionColumn)?.ColumnName;
+        if (rowVersionColumn is not null)
+        {
+            return [.. primaryKeys, rowVersionColumn];
+        }
+
+        var comparableNonKeyColumns = columns
+            .Where(c => !c.IsPrimaryKey && !c.IsIdentity && !IsRowVersionColumn(c) && !IsComparisonUnsafeColumn(c))
+            .Select(c => c.ColumnName);
+
+        return [.. primaryKeys, .. comparableNonKeyColumns];
+    }
 
     public static string BuildWhereClauseForSelectedColumns(IReadOnlyList<string> selectedColumns, string parameterPrefix = "") => string.Join(" AND ", selectedColumns.Select(column =>
         $"((@{parameterPrefix}{column} IS NULL AND [{EscapeIdentifier(column)}] IS NULL) OR [{EscapeIdentifier(column)}] = @{parameterPrefix}{column})"));

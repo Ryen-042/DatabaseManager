@@ -1,9 +1,24 @@
+using DatabaseManager.Core.Models.Schema;
 using DatabaseManager.Core.Services;
 
 namespace DatabaseManager.Tests.Services;
 
 public sealed class RowEditSqlBuilderTests
 {
+    private static ColumnSchemaInfo Column(
+        string name,
+        string dataType = "int",
+        bool isPrimaryKey = false,
+        bool isIdentity = false) => new()
+    {
+        SchemaName = "dbo",
+        TableName = "Users",
+        ColumnName = name,
+        DataType = dataType,
+        IsPrimaryKey = isPrimaryKey,
+        IsIdentity = isIdentity
+    };
+
     [Fact]
     public void EscapeIdentifier_DoublesClosingBrackets()
     {
@@ -36,6 +51,94 @@ public sealed class RowEditSqlBuilderTests
 
         Assert.Contains("IF @@ROWCOUNT <> 1", sql);
         Assert.Contains("THROW 50000, 'Cannot save changes because the row is not uniquely identifiable without a primary key.', 1;", sql);
+    }
+
+    [Fact]
+    public void IsRowVersionColumn_RowversionOrTimestamp_ReturnsTrue()
+    {
+        Assert.True(RowEditSqlBuilder.IsRowVersionColumn(Column("Version", dataType: "rowversion")));
+        Assert.True(RowEditSqlBuilder.IsRowVersionColumn(Column("Version", dataType: "timestamp")));
+        Assert.False(RowEditSqlBuilder.IsRowVersionColumn(Column("Name", dataType: "nvarchar")));
+    }
+
+    [Theory]
+    [InlineData("text")]
+    [InlineData("ntext")]
+    [InlineData("image")]
+    [InlineData("xml")]
+    [InlineData("geography")]
+    [InlineData("geometry")]
+    public void IsComparisonUnsafeColumn_TypesThatRejectEquality_ReturnsTrue(string dataType)
+    {
+        Assert.True(RowEditSqlBuilder.IsComparisonUnsafeColumn(Column("Blob", dataType: dataType)));
+    }
+
+    [Fact]
+    public void IsComparisonUnsafeColumn_OrdinaryType_ReturnsFalse()
+    {
+        Assert.False(RowEditSqlBuilder.IsComparisonUnsafeColumn(Column("Name", dataType: "nvarchar")));
+    }
+
+    [Fact]
+    public void BuildConcurrencyMatchColumns_NoRowVersion_MatchesPrimaryKeyPlusEveryComparableColumn()
+    {
+        var columns = new[]
+        {
+            Column("Id", isPrimaryKey: true),
+            Column("Name", dataType: "nvarchar"),
+            Column("Email", dataType: "nvarchar")
+        };
+
+        var matchColumns = RowEditSqlBuilder.BuildConcurrencyMatchColumns(columns);
+
+        Assert.Equal(["Id", "Name", "Email"], matchColumns);
+    }
+
+    [Fact]
+    public void BuildConcurrencyMatchColumns_RowVersionPresent_UsesItInsteadOfEveryOtherColumn()
+    {
+        var columns = new[]
+        {
+            Column("Id", isPrimaryKey: true),
+            Column("Name", dataType: "nvarchar"),
+            Column("Email", dataType: "nvarchar"),
+            Column("RowVer", dataType: "rowversion")
+        };
+
+        var matchColumns = RowEditSqlBuilder.BuildConcurrencyMatchColumns(columns);
+
+        Assert.Equal(["Id", "RowVer"], matchColumns);
+    }
+
+    [Fact]
+    public void BuildConcurrencyMatchColumns_ComparisonUnsafeColumn_IsExcluded()
+    {
+        var columns = new[]
+        {
+            Column("Id", isPrimaryKey: true),
+            Column("Name", dataType: "nvarchar"),
+            Column("Notes", dataType: "text")
+        };
+
+        var matchColumns = RowEditSqlBuilder.BuildConcurrencyMatchColumns(columns);
+
+        Assert.Equal(["Id", "Name"], matchColumns);
+        Assert.DoesNotContain("Notes", matchColumns);
+    }
+
+    [Fact]
+    public void BuildConcurrencyMatchColumns_IdentityNonKeyColumn_IsExcluded()
+    {
+        var columns = new[]
+        {
+            Column("Id", isPrimaryKey: true),
+            Column("SequenceNo", isIdentity: true),
+            Column("Name", dataType: "nvarchar")
+        };
+
+        var matchColumns = RowEditSqlBuilder.BuildConcurrencyMatchColumns(columns);
+
+        Assert.Equal(["Id", "Name"], matchColumns);
     }
 
     [Fact]

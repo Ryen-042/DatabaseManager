@@ -45,27 +45,7 @@ public sealed class RowEditService : IRowEditService
         return table;
     }
 
-    public async Task<int> SaveUpdatedRowsAsync(
-        string connectionString,
-        string schemaName,
-        string tableName,
-        IReadOnlyList<ColumnSchemaInfo> columns,
-        IReadOnlyList<RowUpdateRequest> rowUpdates,
-        int commandTimeoutSeconds,
-        CancellationToken cancellationToken)
-    {
-        return await SaveRowChangesAsync(
-            connectionString,
-            schemaName,
-            tableName,
-            columns,
-            rowUpdates,
-            Array.Empty<RowInsertRequest>(),
-            commandTimeoutSeconds,
-            cancellationToken);
-    }
-
-    public async Task<int> SaveRowChangesAsync(
+    public async Task<RowSaveResult> SaveRowChangesAsync(
         string connectionString,
         string schemaName,
         string tableName,
@@ -76,23 +56,37 @@ public sealed class RowEditService : IRowEditService
         CancellationToken cancellationToken)
     {
         var primaryKeys = columns.Where(c => c.IsPrimaryKey).Select(c => c.ColumnName).ToList();
-        var matchColumns = primaryKeys.Count > 0
-            ? primaryKeys
+        var hasPrimaryKey = primaryKeys.Count > 0;
+
+        // With a PK, matchColumns also carries the optimistic-concurrency check (a rowversion
+        // column alone, or every other comparable column) alongside the identity predicate; the
+        // no-PK path is unchanged - it already matches on every column and relies on its own
+        // THROW-guarded statement (BuildUpdateStatement's hasPrimaryKey: false branch) instead.
+        var matchColumns = hasPrimaryKey
+            ? RowEditSqlBuilder.BuildConcurrencyMatchColumns(columns)
             : columns.Select(c => c.ColumnName).ToList();
 
         var updatableColumns = columns
-            .Where(c => !c.IsPrimaryKey && !c.IsIdentity && !IsServerGeneratedColumn(c))
+            .Where(c => !c.IsPrimaryKey && !c.IsIdentity && !RowEditSqlBuilder.IsRowVersionColumn(c))
             .Select(c => c.ColumnName)
             .ToList();
 
         var insertableColumns = columns
-            .Where(c => !c.IsIdentity && !IsServerGeneratedColumn(c))
+            .Where(c => !c.IsIdentity && !RowEditSqlBuilder.IsRowVersionColumn(c))
             .Select(c => c.ColumnName)
             .ToList();
 
+        var totalIntendedChanges = rowUpdates.Count + rowInserts.Count;
+
         if ((updatableColumns.Count == 0 || rowUpdates.Count == 0) && rowInserts.Count == 0)
         {
-            return 0;
+            return new RowSaveResult
+            {
+                TotalIntendedChanges = totalIntendedChanges,
+                AffectedRows = 0,
+                WasExecuted = true,
+                ConflictedRowKeys = []
+            };
         }
 
         await using var connection = new SqlConnection(connectionString);
@@ -102,6 +96,7 @@ public sealed class RowEditService : IRowEditService
         try
         {
             var affectedRows = 0;
+            var conflictedRowKeys = new List<IReadOnlyDictionary<string, object?>>();
 
             foreach (var update in rowUpdates)
             {
@@ -116,7 +111,7 @@ public sealed class RowEditService : IRowEditService
 
                 EnsureMatchValues(matchColumns, update.OriginalKeyValues);
 
-                var sql = RowEditSqlBuilder.BuildUpdateStatement(schemaName, tableName, setColumns, matchColumns, hasPrimaryKey: primaryKeys.Count > 0);
+                var sql = RowEditSqlBuilder.BuildUpdateStatement(schemaName, tableName, setColumns, matchColumns, hasPrimaryKey);
 
                 await using var command = new SqlCommand(sql, connection, transaction)
                 {
@@ -133,7 +128,30 @@ public sealed class RowEditService : IRowEditService
                     command.Parameters.AddWithValue($"@key_{key}", ToDbValue(update.OriginalKeyValues[key]));
                 }
 
-                affectedRows += await command.ExecuteNonQueryAsync(cancellationToken);
+                var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+
+                if (hasPrimaryKey && rowsAffected == 0)
+                {
+                    // Concurrency conflict (or the row's since been deleted): the row's current
+                    // database values no longer match what was loaded. Keep checking the rest of
+                    // the batch so every conflict from one Save click is reported together.
+                    conflictedRowKeys.Add(primaryKeys.ToDictionary(key => key, key => update.OriginalKeyValues[key]));
+                    continue;
+                }
+
+                affectedRows += rowsAffected;
+            }
+
+            if (conflictedRowKeys.Count > 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new RowSaveResult
+                {
+                    TotalIntendedChanges = totalIntendedChanges,
+                    AffectedRows = 0,
+                    WasExecuted = false,
+                    ConflictedRowKeys = conflictedRowKeys
+                };
             }
 
             foreach (var insert in rowInserts)
@@ -163,7 +181,13 @@ public sealed class RowEditService : IRowEditService
             }
 
             await transaction.CommitAsync(cancellationToken);
-            return affectedRows;
+            return new RowSaveResult
+            {
+                TotalIntendedChanges = totalIntendedChanges,
+                AffectedRows = affectedRows,
+                WasExecuted = true,
+                ConflictedRowKeys = []
+            };
         }
         catch
         {
@@ -318,12 +342,6 @@ public sealed class RowEditService : IRowEditService
     private static object ToDbValue(object? value)
     {
         return value ?? DBNull.Value;
-    }
-
-    private static bool IsServerGeneratedColumn(ColumnSchemaInfo column)
-    {
-        return column.DataType.Equals("rowversion", StringComparison.OrdinalIgnoreCase)
-            || column.DataType.Equals("timestamp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsureMatchValues(IReadOnlyList<string> matchColumns, IReadOnlyDictionary<string, object?> keyValues)
