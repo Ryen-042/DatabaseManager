@@ -105,6 +105,40 @@ public sealed class SqlQueryAssistantServiceTests
         Assert.DoesNotContain("CREATE PROCEDURE", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("CREATE PROC [dbo].[GetCustomers]\nAS\nSELECT 1;", "ALTER PROCEDURE [dbo].[GetCustomers]\nAS\nSELECT 1;")]
+    [InlineData("create   proc dbo.GetCustomers AS SELECT 1;", "ALTER PROCEDURE dbo.GetCustomers AS SELECT 1;")]
+    [InlineData("CREATE OR ALTER PROCEDURE dbo.GetCustomers AS SELECT 1;", "ALTER PROCEDURE dbo.GetCustomers AS SELECT 1;")]
+    [InlineData("/* header */\n-- note\nCREATE PROC dbo.GetCustomers AS SELECT 1;", "/* header */\n-- note\nALTER PROCEDURE dbo.GetCustomers AS SELECT 1;")]
+    public void BuildAlterProcedureScript_RewritesOnlyTheLeadingCreateHeader(string definition, string expected)
+    {
+        var procedure = new StoredProcedureSchemaInfo { SchemaName = "dbo", ProcedureName = "GetCustomers" };
+
+        Assert.Equal(expected, _service.BuildAlterProcedureScript(procedure, definition));
+    }
+
+    [Fact]
+    public void BuildAlterProcedureScript_IgnoresCreateProcedureTextInsideLeadingComment()
+    {
+        var procedure = new StoredProcedureSchemaInfo { SchemaName = "dbo", ProcedureName = "GetCustomers" };
+        var definition = "-- Existing definition did not contain CREATE PROCEDURE token; review before execution.\nCREATE PROC dbo.GetCustomers AS SELECT 1;";
+
+        var sql = _service.BuildAlterProcedureScript(procedure, definition);
+
+        Assert.Equal("-- Existing definition did not contain CREATE PROCEDURE token; review before execution.\nALTER PROCEDURE dbo.GetCustomers AS SELECT 1;", sql);
+    }
+
+    [Fact]
+    public void BuildAlterProcedureScript_WhenNoCreateHeader_ReturnsDefinitionWithWarning()
+    {
+        var procedure = new StoredProcedureSchemaInfo { SchemaName = "dbo", ProcedureName = "GetCustomers" };
+
+        var sql = _service.BuildAlterProcedureScript(procedure, "SELECT 1;");
+
+        Assert.StartsWith("-- Existing definition did not contain CREATE PROCEDURE token", sql);
+        Assert.EndsWith("SELECT 1;", sql);
+    }
+
     [Fact]
     public void GetSuggestions_WhenAliasIsQualified_PrioritizesColumnsFromMatchedTable()
     {

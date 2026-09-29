@@ -70,6 +70,44 @@ public static class QueryOutputModeParser
             || TryConsumeKeyword(ref span, "TRIGGER");
     }
 
+    /// <summary>
+    /// Locates the leading "CREATE [OR ALTER] PROC|PROCEDURE" keywords of a procedure definition,
+    /// skipping leading whitespace/comments first, so callers can rewrite just those keywords.
+    /// Matching only at the statement start (not anywhere in the text) keeps a "CREATE PROCEDURE"
+    /// mentioned in a header comment or string literal from being mistaken for the real header.
+    /// </summary>
+    public static bool TryFindCreateProcedureHeader(string sql, out int start, out int length)
+    {
+        start = 0;
+        length = 0;
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            return false;
+        }
+
+        var span = SkipLeadingWhitespaceAndComments(sql.AsSpan());
+        var headerStart = sql.Length - span.Length;
+
+        if (!TryConsumeKeyword(ref span, "CREATE"))
+        {
+            return false;
+        }
+
+        if (TryConsumeKeyword(ref span, "OR") && !TryConsumeKeyword(ref span, "ALTER"))
+        {
+            return false;
+        }
+
+        if (!TryConsumeKeyword(ref span, "PROCEDURE") && !TryConsumeKeyword(ref span, "PROC"))
+        {
+            return false;
+        }
+
+        start = headerStart;
+        length = sql.Length - span.Length - headerStart;
+        return true;
+    }
+
     private static ReadOnlySpan<char> SkipLeadingWhitespaceAndComments(ReadOnlySpan<char> span)
     {
         while (true)
@@ -132,6 +170,15 @@ public static class QueryOutputModeParser
         var names = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Variables the batch DECLAREs itself aren't query parameters - prompting for them and
+        // then binding a same-named parameter makes SQL Server reject the DECLARE ("variable
+        // name has already been declared"). A DECLARE statement declares its first @name plus
+        // every @name after a top-level comma, until a ';' or the next statement keyword.
+        var declared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var insideDeclare = false;
+        var expectDeclaredName = false;
+        var parenDepth = 0;
+
         var insideString = false;
         var insideLineComment = false;
         var insideBlockComment = false;
@@ -181,6 +228,7 @@ public static class QueryOutputModeParser
             if (current == '\'')
             {
                 insideString = true;
+                expectDeclaredName = false;
                 continue;
             }
 
@@ -198,8 +246,63 @@ public static class QueryOutputModeParser
                 continue;
             }
 
+            if (char.IsWhiteSpace(current))
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(current) || current == '_')
+            {
+                var wordEnd = i + 1;
+                while (wordEnd < sql.Length && (sql[wordEnd] == '_' || char.IsLetterOrDigit(sql[wordEnd])))
+                {
+                    wordEnd++;
+                }
+
+                var word = sql.AsSpan(i, wordEnd - i);
+                if (word.Equals("DECLARE", StringComparison.OrdinalIgnoreCase))
+                {
+                    insideDeclare = true;
+                    expectDeclaredName = true;
+                    parenDepth = 0;
+                }
+                else
+                {
+                    expectDeclaredName = false;
+                    if (insideDeclare && parenDepth == 0 && StatementKeywords.Contains(word.ToString()))
+                    {
+                        insideDeclare = false;
+                    }
+                }
+
+                i = wordEnd - 1;
+                continue;
+            }
+
             if (current != '@')
             {
+                expectDeclaredName = false;
+                if (!insideDeclare)
+                {
+                    continue;
+                }
+
+                switch (current)
+                {
+                    case '(':
+                        parenDepth++;
+                        break;
+                    case ')':
+                        parenDepth = Math.Max(0, parenDepth - 1);
+                        break;
+                    case ',' when parenDepth == 0:
+                        expectDeclaredName = true;
+                        break;
+                    case ';':
+                        insideDeclare = false;
+                        break;
+                }
+
                 continue;
             }
 
@@ -222,7 +325,12 @@ public static class QueryOutputModeParser
             }
 
             var parameterName = sql[start..end];
-            if (seen.Add(parameterName))
+            if (expectDeclaredName)
+            {
+                declared.Add(parameterName);
+                expectDeclaredName = false;
+            }
+            else if (seen.Add(parameterName))
             {
                 names.Add(parameterName);
             }
@@ -230,8 +338,15 @@ public static class QueryOutputModeParser
             i = end - 1;
         }
 
-        return names;
+        return names.Where(name => !declared.Contains(name)).ToList();
     }
+
+    private static readonly HashSet<string> StatementKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "EXEC", "EXECUTE", "SET", "IF", "ELSE",
+        "WHILE", "BEGIN", "END", "RETURN", "PRINT", "USE", "TRUNCATE", "DROP", "CREATE", "ALTER",
+        "OPEN", "FETCH", "CLOSE", "DEALLOCATE", "RAISERROR", "THROW", "WAITFOR", "GOTO", "BREAK", "CONTINUE"
+    };
 
     private static int FindLastNonWhitespaceIndex(string value)
     {

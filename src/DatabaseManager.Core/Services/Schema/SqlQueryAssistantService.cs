@@ -1,5 +1,6 @@
 using System.Text;
 using DatabaseManager.Core.Models.Schema;
+using DatabaseManager.Core.Services;
 
 namespace DatabaseManager.Core.Services.Schema;
 
@@ -129,12 +130,10 @@ public sealed class SqlQueryAssistantService : IQueryAssistantService
         }
 
         var definition = currentDefinition.Trim();
-        var createToken = "CREATE PROCEDURE";
 
-        var index = definition.IndexOf(createToken, StringComparison.OrdinalIgnoreCase);
-        if (index >= 0)
+        if (QueryOutputModeParser.TryFindCreateProcedureHeader(definition, out var start, out var length))
         {
-            return definition.Remove(index, createToken.Length).Insert(index, "ALTER PROCEDURE");
+            return definition.Remove(start, length).Insert(start, "ALTER PROCEDURE");
         }
 
         return $"-- Existing definition did not contain CREATE PROCEDURE token; review before execution.{Environment.NewLine}{definition}";

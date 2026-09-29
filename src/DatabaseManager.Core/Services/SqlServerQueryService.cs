@@ -65,7 +65,13 @@ public sealed class SqlServerQueryService : IDatabaseQueryService
 
                 if (parameters is not null)
                 {
-                    foreach (var parameter in parameters)
+                    // Bind only the parameters this batch references: a parameter bound to a
+                    // batch that DECLAREs a variable of the same name makes the DECLARE fail.
+                    var batchParameterNames = new HashSet<string>(
+                        QueryOutputModeParser.ExtractParameterNames(batch),
+                        StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var parameter in parameters.Where(p => batchParameterNames.Contains(p.Name)))
                     {
                         command.Parameters.AddWithValue(parameter.Name, parameter.Value ?? DBNull.Value);
                     }

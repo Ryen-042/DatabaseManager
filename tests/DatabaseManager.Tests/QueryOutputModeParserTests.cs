@@ -109,6 +109,27 @@ public sealed class QueryOutputModeParserTests
     }
 
     [Theory]
+    [InlineData("DECLARE @s DATE = '2020-01-01', @e DATE = '2027-01-01';\nEXEC dbo.MyProc @s, @e")]
+    [InlineData("DECLARE @s DATE = '2020-01-01'\nDECLARE @e DATE = '2027-01-01'\nEXEC dbo.MyProc @s, @e")]
+    [InlineData("declare @amount decimal(18,2) = 1.5, @t table (Id int, Name nvarchar(50))\nselect @amount from @t")]
+    [InlineData("DECLARE @n INT = (SELECT COUNT(*) FROM dbo.Users WHERE Id > 0), @m INT = 2; SELECT @n, @m;")]
+    [InlineData("DECLARE @c CURSOR; SET @c = CURSOR FOR SELECT 1; OPEN @c;")]
+    public void ExtractParameterNames_ExcludesVariablesDeclaredInTheBatch(string sql)
+    {
+        Assert.Empty(QueryOutputModeParser.ExtractParameterNames(sql));
+    }
+
+    [Fact]
+    public void ExtractParameterNames_StillExtractsUndeclaredNamesAlongsideDeclaredOnes()
+    {
+        var sql = "DECLARE @from DATE = @start\nSELECT * FROM dbo.Orders WHERE OrderDate >= @from AND CustomerId = @customerId, @x";
+
+        var names = QueryOutputModeParser.ExtractParameterNames(sql);
+
+        Assert.Equal(new[] { "@start", "@customerId", "@x" }, names);
+    }
+
+    [Theory]
     [InlineData("CREATE PROCEDURE dbo.MyProc @Id INT AS BEGIN SELECT 1; END;", true)]
     [InlineData("CREATE OR ALTER PROCEDURE dbo.MyProc AS BEGIN SELECT 1; END;", true)]
     [InlineData("ALTER PROC dbo.MyProc AS BEGIN SELECT 1; END;", true)]
