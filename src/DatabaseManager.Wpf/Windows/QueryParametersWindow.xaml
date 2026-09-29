@@ -31,7 +31,8 @@
                   HeadersVisibility="All">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Variable" Binding="{Binding ParameterName}" IsReadOnly="True" Width="180" />
-                <DataGridTextColumn Header="Value" Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                <DataGridTextColumn Header="Value" Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Width="*"
+                                    EditingElementStyle="{StaticResource DataGridEditingTextBoxStyle}" />
                 <DataGridCheckBoxColumn Header="NULL" Binding="{Binding SendAsNull}" Width="80" />
             </DataGrid.Columns>
         </DataGrid>

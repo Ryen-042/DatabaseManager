@@ -58,19 +58,29 @@ public sealed partial class ProcedureRunnerViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBusy;
 
+    /// <summary>
+    /// Called both when a procedure is selected in the Schema Assistant and from "Open In Runner".
+    /// Reloading the procedure that's already loaded keeps the values the user typed (matched by
+    /// parameter name), so re-clicking it in the sidebar doesn't wipe them.
+    /// </summary>
     public void LoadParameters(StoredProcedureSchemaInfo procedure, IReadOnlyList<StoredProcedureParameterInfo> parameters)
     {
+        var previousRows = _procedure is not null && string.Equals(_procedure.FullName, procedure.FullName, StringComparison.OrdinalIgnoreCase)
+            ? Parameters.ToDictionary(x => x.ParameterName, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, ProcedureParameterEditorRow>(StringComparer.OrdinalIgnoreCase);
+
         _procedure = procedure;
         Parameters.Clear();
 
         foreach (var parameter in parameters.Where(x => !x.IsReturnValue))
         {
+            previousRows.TryGetValue(parameter.ParameterName, out var previous);
             Parameters.Add(new ProcedureParameterEditorRow
             {
                 ParameterName = parameter.ParameterName,
                 DataType = parameter.DataType,
-                Value = string.Empty,
-                SendAsNull = false,
+                Value = previous?.Value ?? string.Empty,
+                SendAsNull = previous?.SendAsNull ?? false,
                 IsOutput = parameter.IsOutput
             });
         }

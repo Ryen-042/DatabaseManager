@@ -1,6 +1,7 @@
 using System.Data;
 using System.Collections.ObjectModel;
 using System.Configuration;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
@@ -57,6 +58,7 @@ public partial class MainWindow : Window
     private string? _selectedConnectionProfileName;
 
     private DataTable? _currentDataTable;
+    private DataTable? _procedureRunnerDataTable;
     private bool _currentFullOutputMode;
     private List<TableSchemaInfo> _tables = new();
     private List<StoredProcedureSchemaInfo> _storedProcedures = new();
@@ -147,7 +149,7 @@ public partial class MainWindow : Window
             setFullOutputMode: value => _currentFullOutputMode = value,
             getTimeoutSeconds: ParseTimeoutSeconds,
             setStatus: SetStatus,
-            onResult: DisplayExecutionResult,
+            onResult: DisplayProcedureRunnerResult,
             onBusyChanged: SetExecutionState);
         ViewModel = new MainWindowViewModel(_commandRegistry, OnDarkModeChanged, OnSchemaAssistantVisibleChanged, templatesPanel, schemaAssistant, queryDocument, queryDocuments, procedureRunner);
         DataContext = ViewModel;
@@ -250,6 +252,14 @@ public partial class MainWindow : Window
                 if (OutputTabControl.SelectedIndex == OutputEditRowsTabIndex)
                 {
                     _ = RefreshEditRowsAsync();
+                }
+                else if (OutputTabControl.SelectedIndex == OutputProcedureRunnerTabIndex)
+                {
+                    CommitPendingProcedureParameterEdit();
+                    if (ViewModel.ProcedureRunner.ExecuteCommand.CanExecute(null))
+                    {
+                        ViewModel.ProcedureRunner.ExecuteCommand.Execute(null);
+                    }
                 }
                 else
                 {
@@ -500,6 +510,7 @@ public partial class MainWindow : Window
     {
         _selectedStoredProcedure = procedure;
         _selectedProcedureParameters = parameters;
+        ViewModel.ProcedureRunner.LoadParameters(procedure, parameters);
         OutputTabControl.SelectedIndex = OutputSchemaTabIndex;
     }
 
@@ -538,7 +549,8 @@ public partial class MainWindow : Window
 
     private async void ExportCsvButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsureExportableData())
+        var table = GetExportTable(sender);
+        if (!EnsureExportableData(table))
         {
             return;
         }
@@ -554,7 +566,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _exportService.ExportToCsvAsync(_currentDataTable!, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
+        await _exportService.ExportToCsvAsync(table, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
         SetStatus($"CSV export complete: {dialog.FileName}");
     }
 
@@ -1053,7 +1065,8 @@ public partial class MainWindow : Window
 
     private async void ExportExcelButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsureExportableData())
+        var table = GetExportTable(sender);
+        if (!EnsureExportableData(table))
         {
             return;
         }
@@ -1069,7 +1082,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _exportService.ExportToExcelAsync(_currentDataTable!, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
+        await _exportService.ExportToExcelAsync(table, dialog.FileName, _currentFullOutputMode, CancellationToken.None);
         SetStatus($"Excel export complete: {dialog.FileName}");
     }
 
@@ -1125,8 +1138,7 @@ public partial class MainWindow : Window
 
         if (!result.IsSuccess)
         {
-            SetStatus($"{operationName} failed after {result.Duration.TotalSeconds:F2}s: {result.ErrorMessage}");
-            _toastService.Show($"{operationName} failed: {result.ErrorMessage}", ToastKind.Error);
+            ReportExecutionFailure(operationName, result);
             return;
         }
 
@@ -1135,10 +1147,52 @@ public partial class MainWindow : Window
             : BuildFallbackResultSets(result);
 
         _currentDataTable = resultSets.FirstOrDefault(x => x.DataTable is not null)?.DataTable;
-        RenderResultsSections(resultSets);
+        RenderResultsSections(ResultsSectionsPanel, resultSets);
         OutputTabControl.SelectedIndex = OutputQueryTabIndex;
         ResultsSummaryTextBlock.Text = BuildResultsSummaryText(resultSets, result.AffectedRows);
+        ReportExecutionSuccess(operationName, result);
+    }
 
+    /// <summary>
+    /// The Procedure Runner's own results area, separate from the Query tab's: a procedure run
+    /// neither switches away from the runner nor overwrites the active query document's results.
+    /// </summary>
+    private void DisplayProcedureRunnerResult(string operationName, QueryExecutionResult result)
+    {
+        if (!result.IsSuccess)
+        {
+            ReportExecutionFailure(operationName, result);
+            return;
+        }
+
+        var resultSets = result.ResultSets?.Count > 0
+            ? result.ResultSets
+            : BuildFallbackResultSets(result);
+
+        _procedureRunnerDataTable = resultSets.FirstOrDefault(x => x.DataTable is not null)?.DataTable;
+        RenderResultsSections(ProcedureResultsSectionsPanel, resultSets);
+        ProcedureResultsSummaryTextBlock.Text = BuildResultsSummaryText(resultSets, result.AffectedRows);
+        ReportExecutionSuccess(operationName, result);
+    }
+
+    // Click is raised before the button's Command runs.
+    private void ExecuteProcedureButton_Click(object sender, RoutedEventArgs e) => CommitPendingProcedureParameterEdit();
+
+    /// <summary>
+    /// A Value cell still in edit mode may not have pushed its text to the row yet, which would
+    /// execute with a stale/NULL value - every path into ProcedureRunner.ExecuteCommand calls this first.
+    /// </summary>
+    private void CommitPendingProcedureParameterEdit() =>
+        ProcedureParametersDataGrid.CommitEdit(DataGridEditingUnit.Row, true);
+
+    private void ReportExecutionFailure(string operationName, QueryExecutionResult result)
+    {
+        SetStatus($"{operationName} failed after {result.Duration.TotalSeconds:F2}s: {result.ErrorMessage}");
+        _toastService.Show($"{operationName} failed: {result.ErrorMessage}", ToastKind.Error);
+    }
+
+    private void ReportExecutionSuccess(string operationName, QueryExecutionResult result)
+    {
         if (result.OutputParameters is { Count: > 0 })
         {
             var outputs = string.Join(", ", result.OutputParameters.Select(x => $"{x.Key}={x.Value ?? "NULL"}"));
@@ -1175,9 +1229,9 @@ public partial class MainWindow : Window
         };
     }
 
-    private void RenderResultsSections(IReadOnlyList<QueryResultSet> resultSets)
+    private void RenderResultsSections(Panel targetPanel, IReadOnlyList<QueryResultSet> resultSets)
     {
-        ResultsSectionsPanel.Children.Clear();
+        targetPanel.Children.Clear();
 
         for (var i = 0; i < resultSets.Count; i++)
         {
@@ -1203,7 +1257,7 @@ public partial class MainWindow : Window
                 expander.Content = dataGrid;
             }
 
-            ResultsSectionsPanel.Children.Add(expander);
+            targetPanel.Children.Add(expander);
         }
     }
 
@@ -1408,9 +1462,16 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private bool EnsureExportableData()
+    /// <summary>
+    /// The Query tab and the Procedure Runner each have their own Export buttons over their own
+    /// results; the runner's buttons carry Tag="ProcedureRunner" to pick its table.
+    /// </summary>
+    private DataTable? GetExportTable(object sender) =>
+        sender is FrameworkElement { Tag: "ProcedureRunner" } ? _procedureRunnerDataTable : _currentDataTable;
+
+    private bool EnsureExportableData([NotNullWhen(true)] DataTable? table)
     {
-        if (_currentDataTable is not { Rows.Count: > 0 })
+        if (table is not { Rows.Count: > 0 })
         {
             SetStatus("No tabular results are available to export.");
             return false;
@@ -1662,12 +1723,7 @@ public partial class MainWindow : Window
 
         if (sender == EditRowsDataGrid)
         {
-            var editingElementStyle = new Style(typeof(TextBox));
-            editingElementStyle.Setters.Add(new Setter(TextBox.BackgroundProperty, FindResource("InputBackgroundBrush")));
-            editingElementStyle.Setters.Add(new Setter(TextBox.ForegroundProperty, FindResource("InputForegroundBrush")));
-            editingElementStyle.Setters.Add(new Setter(TextBox.BorderBrushProperty, FindResource("AccentBrush")));
-            editingElementStyle.Setters.Add(new Setter(TextBox.BorderThicknessProperty, new Thickness(1)));
-            textColumn.EditingElementStyle = editingElementStyle;
+            textColumn.EditingElementStyle = (Style)FindResource("DataGridEditingTextBoxStyle");
         }
     }
 
@@ -2171,7 +2227,7 @@ public partial class MainWindow : Window
 
         if (document.LastResultSets is { } resultSets)
         {
-            RenderResultsSections(resultSets);
+            RenderResultsSections(ResultsSectionsPanel, resultSets);
             ResultsSummaryTextBlock.Text = document.LastResultsSummary ?? string.Empty;
         }
         else

@@ -626,6 +626,18 @@
                 </Style.Triggers>
             </Style>
 
+            <!-- A DataGridTextColumn's in-cell editor is a TextBox with its own explicit style, so it
+                 never picks up the implicit TextBox style above and falls back to the system's black
+                 text/caret - unreadable on the dark theme. Set it as a text column's
+                 EditingElementStyle. DynamicResource keeps it following runtime theme switches. -->
+            <Style x:Key="DataGridEditingTextBoxStyle" TargetType="TextBox">
+                <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource InputForegroundBrush}" />
+                <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+            </Style>
+
             <Style TargetType="DataGridRow">
                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />

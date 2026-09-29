@@ -80,6 +80,33 @@ public sealed class ProcedureRunnerViewModelTests
     }
 
     [Fact]
+    public void LoadParameters_ReloadingSameProcedure_KeepsTypedValues()
+    {
+        var (vm, _, _) = Create();
+        vm.LoadParameters(CreateProcedure(), CreateParameters());
+        vm.Parameters[0].Value = "42";
+        vm.Parameters[1].SendAsNull = true;
+
+        vm.LoadParameters(CreateProcedure(), CreateParameters());
+
+        Assert.Equal("42", vm.Parameters[0].Value);
+        Assert.True(vm.Parameters[1].SendAsNull);
+    }
+
+    [Fact]
+    public void LoadParameters_DifferentProcedure_StartsWithEmptyValues()
+    {
+        var (vm, _, _) = Create();
+        vm.LoadParameters(CreateProcedure("GetWidgets"), CreateParameters());
+        vm.Parameters[0].Value = "42";
+
+        vm.LoadParameters(CreateProcedure("GetGadgets"), CreateParameters());
+
+        Assert.Equal(string.Empty, vm.Parameters[0].Value);
+        Assert.False(vm.Parameters[0].SendAsNull);
+    }
+
+    [Fact]
     public void LoadParameters_ResetsValueAndSendAsNullForEachRow()
     {
         var (vm, _, _) = Create();

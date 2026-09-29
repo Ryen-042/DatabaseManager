@@ -464,7 +464,9 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" MinHeight="80" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="2*" MinHeight="80" />
                                 </Grid.RowDefinitions>
 
                                 <TextBlock FontWeight="SemiBold"
@@ -473,10 +475,12 @@
                                 <WrapPanel Grid.Row="1" Margin="0,10,0,10">
                                     <Button Content="Execute Procedure"
                                             Margin="0,0,8,8"
+                                            Click="ExecuteProcedureButton_Click"
                                             Command="{Binding ProcedureRunner.ExecuteCommand}" />
                                 </WrapPanel>
 
-                                <DataGrid Grid.Row="2"
+                                <DataGrid x:Name="ProcedureParametersDataGrid"
+                                          Grid.Row="2"
                                           FlowDirection="LeftToRight"
                                           AutoGenerateColumns="False"
                                           HeadersVisibility="All"
@@ -496,7 +500,8 @@
                                                             IsReadOnly="True" />
                                         <DataGridTextColumn Header="Value"
                                                             Width="*"
-                                                            Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}" />
+                                                            Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                            EditingElementStyle="{StaticResource DataGridEditingTextBoxStyle}" />
                                         <DataGridCheckBoxColumn Header="NULL"
                                                                 Width="70"
                                                                 Binding="{Binding SendAsNull}" />
@@ -506,6 +511,51 @@
                                                                 IsReadOnly="True" />
                                     </DataGrid.Columns>
                                 </DataGrid>
+
+                                <GridSplitter Grid.Row="3"
+                                              Height="6"
+                                              HorizontalAlignment="Stretch"
+                                              ResizeDirection="Rows"
+                                              ResizeBehavior="PreviousAndNext"
+                                              Background="Transparent" />
+
+                                <Grid Grid.Row="4">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="ProcedureResultsSummaryTextBlock" VerticalAlignment="Center" FontWeight="SemiBold" Text="Results" />
+                                        <!-- Tag tells the shared export handlers to export this tab's results rather than the Query tab's. -->
+                                        <Button Grid.Column="1"
+                                                Margin="8,0,8,0"
+                                                Content="Export CSV"
+                                                MinWidth="90"
+                                                Tag="ProcedureRunner"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="ExportCsvButton_Click" />
+                                        <Button Grid.Column="2"
+                                                Content="Export Excel"
+                                                MinWidth="95"
+                                                Tag="ProcedureRunner"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="ExportExcelButton_Click" />
+                                    </Grid>
+                                    <ScrollViewer Grid.Row="1"
+                                                  Margin="0,10,0,0"
+                                                  FlowDirection="LeftToRight"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="ProcedureResultsSectionsPanel"
+                                                    FlowDirection="LeftToRight" />
+                                    </ScrollViewer>
+                                </Grid>
                             </Grid>
                         </TabItem>
                 </TabControl>

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using DatabaseManager.Core.Models;
 
 namespace DatabaseManager.Wpf.Windows;
@@ -28,6 +29,9 @@ public partial class QueryParametersWindow : Window
 
     private void ExecuteButton_Click(object sender, RoutedEventArgs e)
     {
+        // A Value cell still in edit mode may not have pushed its text to the row yet.
+        ParametersDataGrid.CommitEdit(DataGridEditingUnit.Row, true);
+
         Parameters = _rows
             .Select(row => new QueryParameterValue
             {
